@@ -779,6 +779,8 @@ def perform_merge(request):
             if single_col:
                 merge_columns = [single_col]
         merge_type = data.get("merge_type", "left")  # left, right, outer, inner
+        remove_na = data.get("remove_na", False)  # Remove NA rows from child files
+        drop_duplicates = data.get("drop_duplicates", False)  # Drop duplicate rows from child files
 
         if not main_file_id:
             return JsonResponse(
@@ -844,6 +846,18 @@ def perform_merge(request):
             child_renames = child_info.get("renames", {})
             if child_renames:
                 child_df = child_df.rename(columns=child_renames)
+
+            # Remove rows with NA values if option is enabled
+            if remove_na:
+                child_df = child_df.dropna()
+            
+            # Remove duplicate rows based on merge columns if option is enabled
+            if drop_duplicates:
+                # Get renamed merge columns for this child
+                renamed_merge_cols = [child_renames.get(c, c) for c in merge_columns]
+                available_merge_cols = [c for c in renamed_merge_cols if c in child_df.columns]
+                if available_merge_cols:
+                    child_df = child_df.drop_duplicates(subset=available_merge_cols, keep='first')
 
             child_dfs.append(child_df)
 

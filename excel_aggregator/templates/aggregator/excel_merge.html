@@ -123,6 +123,19 @@
             </button>
         </div>
     </div>
+    
+    <div class="config-options">
+        <label class="checkbox-label">
+            <input type="checkbox" id="remove-na-checkbox">
+            <span class="checkmark"></span>
+            Remove rows with NA/empty values in child files before merging
+        </label>
+        <label class="checkbox-label">
+            <input type="checkbox" id="drop-duplicates-checkbox">
+            <span class="checkmark"></span>
+            Remove duplicate rows from child files (based on merge columns)
+        </label>
+    </div>
 </div>
 
 <!-- Loading -->
@@ -844,6 +857,36 @@
     .merge-select:focus {
         outline: none;
         border-color: var(--accent-primary);
+    }
+    
+    /* Config options checkboxes */
+    .config-options {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .checkbox-label {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        cursor: pointer;
+    }
+    
+    .checkbox-label input[type="checkbox"] {
+        width: 16px;
+        height: 16px;
+        accent-color: var(--accent-primary);
+        cursor: pointer;
+    }
+    
+    .checkbox-label:hover {
+        color: var(--text-primary);
     }
     
     .merge-column-multiselect {
@@ -1701,6 +1744,8 @@ document.addEventListener('DOMContentLoaded', function() {
             });
             
             const mergeColumns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
+            const removeNa = document.getElementById('remove-na-checkbox').checked;
+            const dropDuplicates = document.getElementById('drop-duplicates-checkbox').checked;
             
             const response = await fetch('/merge/perform/', {
                 method: 'POST',
@@ -1710,7 +1755,9 @@ document.addEventListener('DOMContentLoaded', function() {
                     main_renames: mainRenames,
                     child_files: childFilesData,
                     merge_columns: mergeColumns,
-                    merge_type: mergeTypeSelect.value
+                    merge_type: mergeTypeSelect.value,
+                    remove_na: removeNa,
+                    drop_duplicates: dropDuplicates
                 }),
                 headers: {
                     'Content-Type': 'application/json',
