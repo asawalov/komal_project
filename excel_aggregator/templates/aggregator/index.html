@@ -1,0 +1,1140 @@
+{% extends 'base.html' %}
+
+{% block title %}Excel Data Aggregator{% endblock %}
+
+{% block content %}
+<header class="header">
+    <h1>📊 Excel Aggregator</h1>
+    <p>Upload your Excel file, select columns, and generate powerful aggregations</p>
+</header>
+
+<!-- Navigation -->
+<div style="margin-bottom: 2rem;">
+    <a href="/merge/" class="btn btn-secondary">🔗 Excel Merge Tool</a>
+    <a href="/myntra/" class="btn btn-secondary" style="margin-left: 0.5rem;">🛍️ Myntra Scraper</a>
+</div>
+
+<!-- Step 1: File Upload -->
+<div class="card" id="upload-card">
+    <div class="card-title">
+        <span class="step-number">1</span>
+        Upload Excel File
+    </div>
+    
+    <div id="error-container" class="alert alert-error hidden">
+        <span>⚠️</span>
+        <span id="error-message"></span>
+    </div>
+    
+    <div class="upload-zone" id="upload-zone">
+        <div class="icon">📁</div>
+        <h3>Drop your Excel file here</h3>
+        <p>or click to browse • Supports .xlsx, .xls, .csv</p>
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+    </div>
+    
+    <div id="file-info" class="file-info hidden">
+        <span class="file-icon">📄</span>
+        <div class="file-details">
+            <div class="file-name" id="file-name"></div>
+            <div class="file-meta" id="file-meta"></div>
+        </div>
+        <button class="remove-btn" id="remove-file" title="Remove file">✕</button>
+    </div>
+</div>
+
+<!-- Step 2: Select Main Columns (Group By) -->
+<div class="card hidden" id="group-by-card">
+    <div class="card-title">
+        <span class="step-number">2</span>
+        Select Main Columns to Analyze
+    </div>
+    
+    <p class="section-label">Choose one or more columns to group by (e.g., Channel, Brand, Month)</p>
+    
+    <div class="btn-group" style="margin-bottom: 1rem;">
+        <button class="btn btn-secondary btn-sm" id="clear-group-cols">Clear All</button>
+    </div>
+    
+    <div class="checkbox-grid" id="group-by-grid">
+        <!-- Columns will be populated dynamically -->
+    </div>
+</div>
+
+<!-- Step 3: Filter Values for Each Selected Column -->
+<div class="card hidden" id="filters-card">
+    <div class="card-title">
+        <span class="step-number">3</span>
+        Filter Values <span style="color: var(--text-muted); font-weight: 400; font-size: 0.9rem;">(Optional)</span>
+    </div>
+    
+    <p class="section-label">For each selected column, choose which values to include. Leave empty for all values.</p>
+    
+    <div id="filters-container">
+        <!-- Filter sections for each selected column will be added dynamically -->
+    </div>
+</div>
+
+<!-- Step 4: Select Columns for Aggregation -->
+<div class="card hidden" id="agg-columns-card">
+    <div class="card-title">
+        <span class="step-number">4</span>
+        Select Columns for Aggregation
+    </div>
+    
+    <p class="section-label">Choose which numeric columns to aggregate (multiple allowed)</p>
+    
+    <div class="btn-group" style="margin-bottom: 1rem;">
+        <button class="btn btn-secondary btn-sm" id="select-all-agg">Select All</button>
+        <button class="btn btn-secondary btn-sm" id="deselect-all-agg">Deselect All</button>
+    </div>
+    
+    <div class="checkbox-grid" id="agg-columns-grid">
+        <!-- Numeric columns will be populated dynamically -->
+    </div>
+</div>
+
+<!-- Step 5: Aggregation Type & Run -->
+<div class="card hidden" id="aggregation-card">
+    <div class="card-title">
+        <span class="step-number">5</span>
+        Select Aggregation Type
+    </div>
+    
+    <div class="agg-type-grid" id="agg-type-grid">
+        <button class="agg-type-btn selected" data-type="sum">Sum</button>
+        <button class="agg-type-btn" data-type="mean">Mean</button>
+        <button class="agg-type-btn" data-type="count">Count</button>
+        <button class="agg-type-btn" data-type="min">Min</button>
+        <button class="agg-type-btn" data-type="max">Max</button>
+        <button class="agg-type-btn" data-type="median">Median</button>
+        <button class="agg-type-btn" data-type="std">Std Dev</button>
+        <button class="agg-type-btn" data-type="var">Variance</button>
+    </div>
+    
+    <div style="margin-top: 2rem;">
+        <button class="btn btn-primary btn-lg" id="run-aggregation">
+            🚀 Run Aggregation
+        </button>
+    </div>
+</div>
+
+<!-- Step 6: Results -->
+<div class="card hidden" id="results-card">
+    <div class="card-title">
+        <span class="step-number">6</span>
+        Aggregation Results
+    </div>
+    
+    <div id="results-loading" class="loading hidden">
+        <div class="spinner"></div>
+        Processing data...
+    </div>
+    
+    <div id="results-content">
+        <!-- Results will be populated dynamically -->
+    </div>
+</div>
+
+<!-- Data Preview -->
+<div class="card hidden" id="preview-card">
+    <div class="card-title">
+        <span class="icon">👁️</span>
+        Data Preview
+    </div>
+    
+    <p class="section-label">First 5 rows of your data</p>
+    
+    <div class="table-container">
+        <table class="data-table" id="preview-table">
+            <thead id="preview-head"></thead>
+            <tbody id="preview-body"></tbody>
+        </table>
+    </div>
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    /* Filter section styles */
+    .filter-section {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-bottom: 1rem;
+    }
+    
+    .filter-section-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+    }
+    
+    .filter-section-title {
+        font-size: 1rem;
+        font-weight: 600;
+        color: var(--accent-tertiary);
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .filter-section-meta {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    
+    .filter-container {
+        position: relative;
+    }
+    
+    .filter-input-wrapper {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+    }
+    
+    .filter-input {
+        flex: 1;
+        padding: 0.75rem 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+    }
+    
+    .filter-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .filter-count {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        white-space: nowrap;
+    }
+    
+    .filter-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.75rem;
+        min-height: 32px;
+    }
+    
+    .filter-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        padding: 0.3rem 0.6rem;
+        background: rgba(99, 102, 241, 0.15);
+        border: 1px solid var(--accent-primary);
+        border-radius: 16px;
+        font-size: 0.8rem;
+        color: var(--accent-tertiary);
+        animation: tagFadeIn 0.2s ease;
+    }
+    
+    @keyframes tagFadeIn {
+        from { opacity: 0; transform: scale(0.9); }
+        to { opacity: 1; transform: scale(1); }
+    }
+    
+    .filter-tag .remove-tag {
+        cursor: pointer;
+        opacity: 0.7;
+        transition: opacity 0.2s;
+        font-size: 0.9rem;
+        line-height: 1;
+    }
+    
+    .filter-tag .remove-tag:hover {
+        opacity: 1;
+    }
+    
+    .filter-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--bg-card);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        margin-top: 0.5rem;
+        z-index: 100;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    
+    .filter-option {
+        padding: 0.6rem 1rem;
+        cursor: pointer;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+        transition: background 0.15s ease;
+        border-bottom: 1px solid var(--border-color);
+        font-size: 0.85rem;
+    }
+    
+    .filter-option:last-child {
+        border-bottom: none;
+    }
+    
+    .filter-option:hover {
+        background: rgba(99, 102, 241, 0.1);
+    }
+    
+    .filter-option.selected {
+        background: rgba(99, 102, 241, 0.15);
+    }
+    
+    .filter-option .check-icon {
+        width: 16px;
+        height: 16px;
+        border: 2px solid var(--border-color);
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.65rem;
+        color: white;
+        flex-shrink: 0;
+    }
+    
+    .filter-option.selected .check-icon {
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+    }
+    
+    .filter-option .value-text {
+        flex: 1;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .no-results {
+        padding: 0.75rem;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .filter-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.75rem;
+    }
+    
+    .filter-actions .btn {
+        padding: 0.4rem 0.75rem;
+        font-size: 0.75rem;
+    }
+    
+    .btn-sm {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+    
+    .btn-lg {
+        padding: 1rem 2rem;
+        font-size: 1.1rem;
+    }
+    
+    /* Results summary */
+    .results-summary {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1rem;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+        margin-bottom: 1.5rem;
+    }
+    
+    .results-summary-item {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .results-summary-item .label {
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .results-summary-item .value {
+        color: var(--accent-tertiary);
+        font-weight: 600;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .filters-applied {
+        margin-top: 0.5rem;
+        padding: 0.75rem;
+        background: rgba(99, 102, 241, 0.1);
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+    
+    .filters-applied .filter-item {
+        margin-bottom: 0.25rem;
+    }
+    
+    .filters-applied .filter-col {
+        color: var(--accent-tertiary);
+        font-weight: 500;
+    }
+    
+    .filters-applied .filter-vals {
+        color: var(--text-secondary);
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // State
+    let currentFileId = null;
+    let allColumns = [];
+    let numericColumns = [];
+    let selectedGroupByColumns = [];
+    let columnValuesCache = {};  // Cache for column values: {column: [values]}
+    let columnFilters = {};  // Selected filters: {column: [selected values]}
+    let selectedAggColumns = [];
+    let selectedAggType = 'sum';
+    let isUpdatingFilters = false;  // Flag to prevent concurrent updates
+    let pendingFilterUpdate = false;  // Flag for pending updates
+    
+    // DOM elements
+    const uploadZone = document.getElementById('upload-zone');
+    const fileInput = document.getElementById('file-input');
+    const fileInfo = document.getElementById('file-info');
+    const fileName = document.getElementById('file-name');
+    const fileMeta = document.getElementById('file-meta');
+    const removeFileBtn = document.getElementById('remove-file');
+    const errorContainer = document.getElementById('error-container');
+    const errorMessage = document.getElementById('error-message');
+    
+    const groupByCard = document.getElementById('group-by-card');
+    const groupByGrid = document.getElementById('group-by-grid');
+    const clearGroupColsBtn = document.getElementById('clear-group-cols');
+    
+    const filtersCard = document.getElementById('filters-card');
+    const filtersContainer = document.getElementById('filters-container');
+    
+    const aggColumnsCard = document.getElementById('agg-columns-card');
+    const aggColumnsGrid = document.getElementById('agg-columns-grid');
+    const selectAllAggBtn = document.getElementById('select-all-agg');
+    const deselectAllAggBtn = document.getElementById('deselect-all-agg');
+    
+    const aggregationCard = document.getElementById('aggregation-card');
+    const aggTypeGrid = document.getElementById('agg-type-grid');
+    const runAggBtn = document.getElementById('run-aggregation');
+    
+    const resultsCard = document.getElementById('results-card');
+    const resultsLoading = document.getElementById('results-loading');
+    const resultsContent = document.getElementById('results-content');
+    
+    const previewCard = document.getElementById('preview-card');
+    const previewHead = document.getElementById('preview-head');
+    const previewBody = document.getElementById('preview-body');
+    
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    // File upload handling
+    uploadZone.addEventListener('click', () => fileInput.click());
+    
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.classList.add('dragover');
+    });
+    
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.classList.remove('dragover');
+    });
+    
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.classList.remove('dragover');
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileUpload(files[0]);
+        }
+    });
+    
+    fileInput.addEventListener('change', (e) => {
+        if (e.target.files.length > 0) {
+            handleFileUpload(e.target.files[0]);
+        }
+    });
+    
+    removeFileBtn.addEventListener('click', resetAll);
+    
+    // Handle file upload
+    async function handleFileUpload(file) {
+        hideError();
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        uploadZone.innerHTML = `
+            <div class="loading">
+                <div class="spinner"></div>
+                Uploading and processing...
+            </div>
+        `;
+        
+        try {
+            const response = await fetch('/upload/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const text = await response.text();
+            let data;
+            try {
+                data = JSON.parse(text);
+            } catch (e) {
+                throw new Error('Invalid JSON response from server');
+            }
+            
+            if (data.success) {
+                currentFileId = data.file_id;
+                allColumns = data.columns;
+                numericColumns = data.numeric_columns;
+                
+                // Show file info
+                uploadZone.classList.add('hidden');
+                fileInfo.classList.remove('hidden');
+                fileName.textContent = data.filename;
+                fileMeta.textContent = `${data.row_count.toLocaleString()} rows • ${data.columns.length} columns`;
+                
+                // Populate group by columns
+                populateGroupByColumns();
+                groupByCard.classList.remove('hidden');
+                
+                // Show preview
+                if (data.preview && data.preview.length > 0) {
+                    updatePreview(data.preview);
+                    previewCard.classList.remove('hidden');
+                }
+                
+            } else {
+                resetUploadZone();
+                showError(typeof data.error === 'object' ? JSON.stringify(data.error) : data.error);
+            }
+        } catch (error) {
+            resetUploadZone();
+            showError('Failed to upload file: ' + error.message);
+            console.error(error);
+        }
+    }
+    
+    function resetUploadZone() {
+        uploadZone.classList.remove('hidden');
+        uploadZone.innerHTML = `
+            <div class="icon">📁</div>
+            <h3>Drop your Excel file here</h3>
+            <p>or click to browse • Supports .xlsx, .xls, .csv</p>
+            <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+        `;
+        const newFileInput = document.getElementById('file-input');
+        newFileInput.addEventListener('change', (e) => {
+            if (e.target.files.length > 0) {
+                handleFileUpload(e.target.files[0]);
+            }
+        });
+    }
+    
+    function resetAll() {
+        if (currentFileId) {
+            fetch(`/cleanup/${currentFileId}/`, {
+                method: 'POST',
+                headers: { 'X-CSRFToken': csrfToken }
+            });
+        }
+        
+        currentFileId = null;
+        allColumns = [];
+        numericColumns = [];
+        selectedGroupByColumns = [];
+        columnValuesCache = {};
+        columnFilters = {};
+        selectedAggColumns = [];
+        
+        resetUploadZone();
+        fileInfo.classList.add('hidden');
+        groupByCard.classList.add('hidden');
+        filtersCard.classList.add('hidden');
+        aggColumnsCard.classList.add('hidden');
+        aggregationCard.classList.add('hidden');
+        resultsCard.classList.add('hidden');
+        previewCard.classList.add('hidden');
+        hideError();
+    }
+    
+    // Populate group by columns grid
+    function populateGroupByColumns() {
+        groupByGrid.innerHTML = '';
+        
+        allColumns.forEach(col => {
+            const item = document.createElement('label');
+            item.className = 'checkbox-item';
+            item.innerHTML = `
+                <input type="checkbox" value="${col}">
+                <span class="checkbox-custom"></span>
+                <span class="checkbox-label" title="${col}">${col}</span>
+            `;
+            
+            const checkbox = item.querySelector('input');
+            checkbox.addEventListener('change', () => {
+                item.classList.toggle('selected', checkbox.checked);
+                updateSelectedGroupByColumns();
+            });
+            
+            groupByGrid.appendChild(item);
+        });
+    }
+    
+    function getSelectedGroupByColumns() {
+        const checkboxes = groupByGrid.querySelectorAll('input[type="checkbox"]');
+        const cols = [];
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                cols.push(cb.value);
+            }
+        });
+        return cols;
+    }
+    
+    async function updateSelectedGroupByColumns() {
+        // Get current selection
+        selectedGroupByColumns = getSelectedGroupByColumns();
+        
+        // If already updating, mark as pending and return
+        if (isUpdatingFilters) {
+            pendingFilterUpdate = true;
+            return;
+        }
+        
+        isUpdatingFilters = true;
+        
+        try {
+            // Update filters section
+            await updateFiltersSection();
+            
+            // Show/hide subsequent sections
+            if (selectedGroupByColumns.length > 0) {
+                filtersCard.classList.remove('hidden');
+                populateAggColumns();
+                aggColumnsCard.classList.remove('hidden');
+                aggregationCard.classList.remove('hidden');
+            } else {
+                filtersCard.classList.add('hidden');
+                aggColumnsCard.classList.add('hidden');
+                aggregationCard.classList.add('hidden');
+            }
+            
+            resultsCard.classList.add('hidden');
+        } finally {
+            isUpdatingFilters = false;
+            
+            // If there was a pending update, run it now
+            if (pendingFilterUpdate) {
+                pendingFilterUpdate = false;
+                updateSelectedGroupByColumns();
+            }
+        }
+    }
+    
+    // Clear all group by columns
+    clearGroupColsBtn.addEventListener('click', () => {
+        const items = groupByGrid.querySelectorAll('.checkbox-item');
+        items.forEach(item => {
+            item.classList.remove('selected');
+            item.querySelector('input').checked = false;
+        });
+        updateSelectedGroupByColumns();
+    });
+    
+    // Update filters section for selected columns
+    async function updateFiltersSection() {
+        // Get current selection at the time of this call
+        const currentColumns = [...selectedGroupByColumns];
+        
+        // Clear existing content
+        filtersContainer.innerHTML = '';
+        
+        // Remove filters for columns that are no longer selected
+        for (const col of Object.keys(columnFilters)) {
+            if (!currentColumns.includes(col)) {
+                delete columnFilters[col];
+            }
+        }
+        
+        // Create filter section for each selected column
+        for (const col of currentColumns) {
+            // Check if selection changed during async operations
+            if (!selectedGroupByColumns.includes(col)) {
+                continue;
+            }
+            
+            // Fetch column values if not cached
+            if (!columnValuesCache[col]) {
+                await fetchColumnValues(col);
+            }
+            
+            // Check again after async fetch
+            if (!selectedGroupByColumns.includes(col)) {
+                continue;
+            }
+            
+            // Initialize filters array if not exists
+            if (!columnFilters[col]) {
+                columnFilters[col] = [];
+            }
+            
+            createFilterSection(col);
+        }
+    }
+    
+    // Fetch unique values for a column
+    async function fetchColumnValues(columnName) {
+        try {
+            const response = await fetch('/column-values/', {
+                method: 'POST',
+                body: JSON.stringify({
+                    file_id: currentFileId,
+                    column_name: columnName
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                columnValuesCache[columnName] = data.values;
+            }
+        } catch (error) {
+            console.error('Error fetching column values:', error);
+            columnValuesCache[columnName] = [];
+        }
+    }
+    
+    // Create filter section for a column
+    function createFilterSection(columnName) {
+        const values = columnValuesCache[columnName] || [];
+        const selectedValues = columnFilters[columnName] || [];
+        
+        const section = document.createElement('div');
+        section.className = 'filter-section';
+        section.dataset.column = columnName;
+        
+        section.innerHTML = `
+            <div class="filter-section-header">
+                <span class="filter-section-title">${columnName}</span>
+                <span class="filter-section-meta">${values.length} unique values</span>
+            </div>
+            <div class="filter-container">
+                <div class="filter-input-wrapper">
+                    <input type="text" class="filter-input" placeholder="Type to search ${columnName} values...">
+                    <span class="filter-count">${selectedValues.length} selected</span>
+                </div>
+                <div class="filter-tags"></div>
+                <div class="filter-dropdown hidden"></div>
+                <div class="filter-actions">
+                    <button class="btn btn-secondary select-all-btn">Select All</button>
+                    <button class="btn btn-secondary clear-all-btn">Clear All</button>
+                </div>
+            </div>
+        `;
+        
+        const filterInput = section.querySelector('.filter-input');
+        const filterTags = section.querySelector('.filter-tags');
+        const filterDropdown = section.querySelector('.filter-dropdown');
+        const filterCount = section.querySelector('.filter-count');
+        const selectAllBtn = section.querySelector('.select-all-btn');
+        const clearAllBtn = section.querySelector('.clear-all-btn');
+        
+        // Helper to escape HTML
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = String(text);
+            return div.innerHTML;
+        }
+        
+        // Helper to find value in array (handles type coercion)
+        function findValueIndex(arr, val) {
+            // First try exact match
+            let idx = arr.indexOf(val);
+            if (idx > -1) return idx;
+            
+            // Try string comparison
+            const valStr = String(val);
+            for (let i = 0; i < arr.length; i++) {
+                if (String(arr[i]) === valStr) return i;
+            }
+            return -1;
+        }
+        
+        // Helper to check if value is selected
+        function isValueSelected(val) {
+            return findValueIndex(columnFilters[columnName] || [], val) > -1;
+        }
+        
+        // Update tags display
+        function updateTags() {
+            const selected = columnFilters[columnName] || [];
+            if (selected.length === 0) {
+                filterTags.innerHTML = '<span style="color: var(--text-muted); font-size: 0.8rem;">No filter - all values included</span>';
+            } else {
+                filterTags.innerHTML = '';
+                selected.slice(0, 10).forEach((val, idx) => {
+                    const tag = document.createElement('span');
+                    tag.className = 'filter-tag';
+                    tag.innerHTML = `${escapeHtml(val)} <span class="remove-tag">×</span>`;
+                    tag.querySelector('.remove-tag').addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        toggleValue(val);
+                    });
+                    filterTags.appendChild(tag);
+                });
+                
+                if (selected.length > 10) {
+                    const moreTag = document.createElement('span');
+                    moreTag.className = 'filter-tag';
+                    moreTag.textContent = `+${selected.length - 10} more`;
+                    filterTags.appendChild(moreTag);
+                }
+            }
+            filterCount.textContent = `${selected.length} selected`;
+        }
+        
+        // Toggle value selection
+        function toggleValue(value) {
+            const selected = columnFilters[columnName] || [];
+            const index = findValueIndex(selected, value);
+            if (index > -1) {
+                selected.splice(index, 1);
+            } else {
+                // Store the original value from the values array
+                const originalValue = values.find(v => String(v) === String(value));
+                selected.push(originalValue !== undefined ? originalValue : value);
+            }
+            columnFilters[columnName] = selected;
+            updateTags();
+            renderDropdown(filterInput.value.toLowerCase());
+        }
+        
+        // Render dropdown
+        function renderDropdown(query = '') {
+            const filtered = values.filter(val => 
+                String(val).toLowerCase().includes(query)
+            );
+            const selected = columnFilters[columnName] || [];
+            
+            if (filtered.length === 0) {
+                filterDropdown.innerHTML = '<div class="no-results">No matching values</div>';
+            } else {
+                filterDropdown.innerHTML = '';
+                filtered.slice(0, 50).forEach(val => {
+                    const isSelected = isValueSelected(val);
+                    const opt = document.createElement('div');
+                    opt.className = 'filter-option' + (isSelected ? ' selected' : '');
+                    opt.innerHTML = `<span class="check-icon">${isSelected ? '✓' : ''}</span><span class="value-text">${escapeHtml(val)}</span>`;
+                    opt.addEventListener('click', () => toggleValue(val));
+                    filterDropdown.appendChild(opt);
+                });
+                
+                if (filtered.length > 50) {
+                    const msg = document.createElement('div');
+                    msg.className = 'no-results';
+                    msg.textContent = `Showing first 50 of ${filtered.length}`;
+                    filterDropdown.appendChild(msg);
+                }
+            }
+            
+            filterDropdown.classList.remove('hidden');
+        }
+        
+        // Event listeners
+        filterInput.addEventListener('input', (e) => {
+            renderDropdown(e.target.value.toLowerCase());
+        });
+        
+        filterInput.addEventListener('focus', () => {
+            renderDropdown(filterInput.value.toLowerCase());
+        });
+        
+        // Close dropdown when clicking outside
+        section.addEventListener('click', (e) => {
+            e.stopPropagation();
+        });
+        
+        selectAllBtn.addEventListener('click', () => {
+            columnFilters[columnName] = [...values];
+            updateTags();
+            renderDropdown(filterInput.value.toLowerCase());
+        });
+        
+        clearAllBtn.addEventListener('click', () => {
+            columnFilters[columnName] = [];
+            updateTags();
+            renderDropdown(filterInput.value.toLowerCase());
+        });
+        
+        // Initial render
+        updateTags();
+        
+        filtersContainer.appendChild(section);
+    }
+    
+    // Close all dropdowns when clicking outside
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.filter-dropdown').forEach(dd => {
+            dd.classList.add('hidden');
+        });
+    });
+    
+    // Populate aggregation columns grid
+    function populateAggColumns() {
+        aggColumnsGrid.innerHTML = '';
+        
+        if (numericColumns.length === 0) {
+            aggColumnsGrid.innerHTML = '<p style="color: var(--text-muted); padding: 1rem;">No numeric columns available</p>';
+            return;
+        }
+        
+        numericColumns.forEach(col => {
+            const isSelected = selectedAggColumns.includes(col);
+            const item = document.createElement('label');
+            item.className = 'checkbox-item' + (isSelected ? ' selected' : '');
+            item.innerHTML = `
+                <input type="checkbox" value="${col}" ${isSelected ? 'checked' : ''}>
+                <span class="checkbox-custom"></span>
+                <span class="checkbox-label" title="${col}">${col}</span>
+            `;
+            
+            const checkbox = item.querySelector('input');
+            checkbox.addEventListener('change', () => {
+                item.classList.toggle('selected', checkbox.checked);
+                updateSelectedAggColumns();
+            });
+            
+            aggColumnsGrid.appendChild(item);
+        });
+    }
+    
+    function updateSelectedAggColumns() {
+        const checkboxes = aggColumnsGrid.querySelectorAll('input[type="checkbox"]');
+        selectedAggColumns = [];
+        checkboxes.forEach(cb => {
+            if (cb.checked) {
+                selectedAggColumns.push(cb.value);
+            }
+        });
+    }
+    
+    // Select/Deselect all aggregation columns
+    selectAllAggBtn.addEventListener('click', () => {
+        const items = aggColumnsGrid.querySelectorAll('.checkbox-item');
+        items.forEach(item => {
+            item.classList.add('selected');
+            item.querySelector('input').checked = true;
+        });
+        updateSelectedAggColumns();
+    });
+    
+    deselectAllAggBtn.addEventListener('click', () => {
+        const items = aggColumnsGrid.querySelectorAll('.checkbox-item');
+        items.forEach(item => {
+            item.classList.remove('selected');
+            item.querySelector('input').checked = false;
+        });
+        updateSelectedAggColumns();
+    });
+    
+    // Aggregation type selection
+    aggTypeGrid.addEventListener('click', (e) => {
+        if (e.target.classList.contains('agg-type-btn')) {
+            aggTypeGrid.querySelectorAll('.agg-type-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            e.target.classList.add('selected');
+            selectedAggType = e.target.dataset.type;
+        }
+    });
+    
+    // Run aggregation
+    runAggBtn.addEventListener('click', runAggregation);
+    
+    async function runAggregation() {
+        if (selectedGroupByColumns.length === 0) {
+            showError('Please select at least one main column to analyze.');
+            return;
+        }
+        
+        if (selectedAggColumns.length === 0) {
+            showError('Please select at least one column for aggregation.');
+            return;
+        }
+        
+        hideError();
+        resultsCard.classList.remove('hidden');
+        resultsLoading.classList.remove('hidden');
+        resultsContent.style.opacity = '0.3';
+        
+        try {
+            const response = await fetch('/aggregate/', {
+                method: 'POST',
+                body: JSON.stringify({
+                    file_id: currentFileId,
+                    group_by_columns: selectedGroupByColumns,
+                    column_filters: columnFilters,
+                    aggregation_columns: selectedAggColumns,
+                    aggregation_type: selectedAggType
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                displayResults(data);
+            } else {
+                showError(data.error || 'Failed to run aggregation.');
+            }
+        } catch (error) {
+            showError('Failed to run aggregation. Please try again.');
+            console.error(error);
+        } finally {
+            resultsLoading.classList.add('hidden');
+            resultsContent.style.opacity = '1';
+        }
+    }
+    
+    function displayResults(data) {
+        const statLabels = {
+            sum: 'Sum',
+            mean: 'Mean',
+            count: 'Count',
+            min: 'Minimum',
+            max: 'Maximum',
+            median: 'Median',
+            std: 'Std Dev',
+            var: 'Variance'
+        };
+        
+        let html = '';
+        
+        // Summary
+        html += '<div class="results-summary">';
+        html += `<div class="results-summary-item"><span class="label">Grouped By:</span> <span class="value">${data.group_by_columns.join(', ')}</span></div>`;
+        html += `<div class="results-summary-item"><span class="label">Aggregation:</span> <span class="value">${statLabels[data.aggregation_type]}</span></div>`;
+        html += `<div class="results-summary-item"><span class="label">Rows:</span> <span class="value">${data.filtered_rows.toLocaleString()} / ${data.original_rows.toLocaleString()}</span></div>`;
+        html += `<div class="results-summary-item"><span class="label">Groups:</span> <span class="value">${data.group_count}</span></div>`;
+        html += '</div>';
+        
+        // Filters applied
+        if (Object.keys(data.filters_applied).length > 0) {
+            html += '<div class="filters-applied">';
+            html += '<strong style="color: var(--text-primary);">Filters Applied:</strong>';
+            for (const [col, vals] of Object.entries(data.filters_applied)) {
+                html += `<div class="filter-item"><span class="filter-col">${col}:</span> <span class="filter-vals">${vals.slice(0, 5).join(', ')}${vals.length > 5 ? ` (+${vals.length - 5} more)` : ''}</span></div>`;
+            }
+            html += '</div>';
+        }
+        
+        // Overall totals
+        html += '<div style="margin: 1.5rem 0;">';
+        html += `<p class="section-label">Overall ${statLabels[data.aggregation_type]} (Filtered Data)</p>`;
+        html += '<div class="results-grid">';
+        
+        for (const [col, stats] of Object.entries(data.overall_stats)) {
+            const value = stats[data.aggregation_type];
+            html += `
+                <div class="stat-card highlight">
+                    <div class="stat-label">${col}</div>
+                    <div class="stat-value">${formatNumber(value)}</div>
+                </div>
+            `;
+        }
+        html += '</div></div>';
+        
+        // Grouped results table
+        if (data.grouped_data && data.grouped_data.length > 0) {
+            html += '<div>';
+            html += `<p class="section-label">${statLabels[data.aggregation_type]} by ${data.group_by_columns.join(' → ')}</p>`;
+            html += '<div class="table-container"><table class="data-table">';
+            
+            // Header
+            const columns = Object.keys(data.grouped_data[0]);
+            html += '<thead><tr>' + columns.map(c => `<th>${c}</th>`).join('') + '</tr></thead>';
+            
+            // Body (limit to 100 rows)
+            html += '<tbody>';
+            data.grouped_data.slice(0, 100).forEach(row => {
+                html += '<tr>' + columns.map(c => `<td>${formatNumber(row[c])}</td>`).join('') + '</tr>';
+            });
+            if (data.grouped_data.length > 100) {
+                html += `<tr><td colspan="${columns.length}" style="text-align: center; color: var(--text-muted);">... showing first 100 of ${data.grouped_data.length} rows</td></tr>`;
+            }
+            html += '</tbody></table></div></div>';
+        }
+        
+        resultsContent.innerHTML = html;
+        
+        // Scroll to results
+        resultsCard.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+    
+    function updatePreview(previewData) {
+        if (!previewData || previewData.length === 0) {
+            previewCard.classList.add('hidden');
+            return;
+        }
+        
+        const columns = Object.keys(previewData[0]);
+        
+        previewHead.innerHTML = '<tr>' + columns.map(col => `<th>${col}</th>`).join('') + '</tr>';
+        previewBody.innerHTML = previewData.map(row => 
+            '<tr>' + columns.map(col => `<td>${row[col] !== null && row[col] !== undefined ? row[col] : ''}</td>`).join('') + '</tr>'
+        ).join('');
+    }
+    
+    function formatNumber(value) {
+        if (value === null || value === undefined) return '-';
+        if (typeof value === 'number') {
+            if (Number.isInteger(value)) return value.toLocaleString();
+            return value.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        }
+        return value;
+    }
+    
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorContainer.classList.remove('hidden');
+        errorContainer.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+    
+    function hideError() {
+        errorContainer.classList.add('hidden');
+    }
+});
+</script>
+{% endblock %}

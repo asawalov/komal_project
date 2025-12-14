@@ -1,0 +1,1849 @@
+{% extends 'base.html' %}
+
+{% block title %}Excel Merge Tool{% endblock %}
+
+{% block content %}
+<header class="header">
+    <h1>📊 Excel Merge Tool</h1>
+    <p>Upload and merge multiple Excel files based on a common column</p>
+</header>
+
+<!-- Navigation -->
+<div style="margin-bottom: 2rem;">
+    <a href="/" class="btn btn-secondary">← Back to Excel Aggregator</a>
+    <a href="/myntra/" class="btn btn-secondary" style="margin-left: 0.5rem;">🛍️ Myntra Scraper</a>
+</div>
+
+<!-- Error Container -->
+<div id="error-container" class="alert alert-error hidden">
+    <span>⚠️</span>
+    <span id="error-message"></span>
+</div>
+
+<!-- Step 1: Upload Main Excel - Centered -->
+<div class="card" id="main-file-card">
+    <div class="card-title">
+        <span class="step-number">1</span>
+        Upload Main Excel File
+    </div>
+    
+    <div class="main-file-centered">
+        <p class="section-label">Primary file that child files will merge into</p>
+        
+        <div class="main-file-box">
+            <div class="file-upload-area main-upload" id="main-upload-area">
+                <input type="file" id="main-file-input" accept=".xlsx,.xls,.csv" hidden>
+                <div class="upload-placeholder" id="main-upload-placeholder">
+                    <div class="upload-icon-main">📁</div>
+                    <div>Click to upload main Excel</div>
+                    <span class="file-types">.xlsx, .xls, .csv</span>
+                </div>
+                <div class="upload-loader" id="main-upload-loader">
+                    <div class="upload-spinner"></div>
+                    <span class="upload-loader-text">Uploading...</span>
+                </div>
+                <div class="upload-success hidden" id="main-upload-success">
+                    <div class="file-icon-main">📄</div>
+                    <div class="file-details-main">
+                        <span class="file-name" id="main-file-name"></span>
+                        <span class="file-meta" id="main-file-meta"></span>
+                    </div>
+                    <button class="remove-btn-main" id="main-remove-btn">✕</button>
+                </div>
+            </div>
+            
+            <div class="column-selection-main hidden" id="main-columns-section">
+                <label class="columns-label">Select columns:</label>
+                <div class="multiselect-container" id="main-multiselect"></div>
+            </div>
+            
+            <div class="rename-section hidden" id="main-rename-section">
+                <label class="columns-label">Rename columns (optional):</label>
+                <div class="rename-list" id="main-rename-list"></div>
+                <button type="button" class="btn btn-sm btn-secondary add-rename-btn" id="main-add-rename">+ Add rename</button>
+            </div>
+        </div>
+        
+        <!-- Flow Arrow -->
+        <div class="flow-arrow">
+            <div class="arrow-line"></div>
+            <div class="arrow-icon">⬇</div>
+            <div class="arrow-text">merges with</div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 2: Upload Child Excel Files -->
+<div class="card" id="child-files-card">
+    <div class="card-title">
+        <span class="step-number">2</span>
+        Upload Child Excel Files
+        <span class="child-count" id="child-count">(0 files)</span>
+    </div>
+    
+    <p class="section-label" style="text-align: center;">Add Excel files to merge with the main file</p>
+    
+    <div class="child-files-grid" id="child-files-container">
+        <!-- Child file upload areas will be added here -->
+    </div>
+    
+    <div style="text-align: center;">
+        <button class="btn btn-secondary add-child-btn-compact" id="add-child-btn">
+            ➕ Add File
+        </button>
+    </div>
+</div>
+
+<!-- Step 3: Merge Configuration -->
+<div class="card hidden" id="merge-config-card">
+    <div class="card-title">
+        <span class="step-number">3</span>
+        Merge Configuration
+    </div>
+    
+    <div class="config-grid">
+        <div class="config-item-full">
+            <label class="section-label">Merge on column (common columns across all files):</label>
+            <div class="multiselect-container merge-column-multiselect" id="merge-column-multiselect"></div>
+        </div>
+        
+        <div class="config-item">
+            <label class="section-label">Merge Type:</label>
+            <select id="merge-type-select" class="merge-select">
+                <option value="left">Left Join (Keep all main rows)</option>
+                <option value="inner">Inner Join (Only matching)</option>
+                <option value="outer">Outer Join (Keep all rows)</option>
+                <option value="right">Right Join (Keep all child rows)</option>
+            </select>
+        </div>
+        
+        <div class="config-item" style="justify-content: flex-end;">
+            <button class="btn btn-primary" id="merge-btn" disabled>
+                🔗 Merge Files
+            </button>
+        </div>
+    </div>
+</div>
+
+<!-- Loading -->
+<div class="card hidden" id="loading-card">
+    <div class="loading">
+        <div class="spinner"></div>
+        <span>Merging files...</span>
+    </div>
+</div>
+
+<!-- Step 4: Results -->
+<div class="card hidden" id="results-card">
+    <div class="card-title">
+        <span class="step-number">4</span>
+        Merge Results
+    </div>
+    
+    <div class="results-summary">
+        <div class="results-summary-item">
+            <span class="label">Total Rows:</span>
+            <span class="value" id="result-rows">0</span>
+        </div>
+        <div class="results-summary-item">
+            <span class="label">Total Columns:</span>
+            <span class="value" id="result-columns">0</span>
+        </div>
+    </div>
+    
+    <div class="result-columns" id="result-columns-list">
+        <label class="section-label">Columns in merged file:</label>
+        <div class="columns-tags" id="columns-tags"></div>
+    </div>
+    
+    <div class="preview-section">
+        <label class="section-label">Preview (first 100 rows):</label>
+        <div class="table-container" id="preview-table-container">
+            <table class="preview-table" id="preview-table">
+                <thead id="preview-thead"></thead>
+                <tbody id="preview-tbody"></tbody>
+            </table>
+        </div>
+    </div>
+    
+    <div class="btn-group" style="margin-top: 1.5rem;">
+        <a class="btn btn-primary btn-lg" id="download-btn" href="#" download>
+            📥 Download Merged Excel
+        </a>
+        <button class="btn btn-secondary" id="reset-btn">
+            🔄 Start Over
+        </button>
+    </div>
+</div>
+
+{% csrf_token %}
+{% endblock %}
+
+{% block extra_css %}
+<style>
+    .child-count {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        font-weight: 400;
+        margin-left: 0.5rem;
+    }
+    
+    /* Main file centered layout */
+    .main-file-centered {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .main-file-box {
+        width: 100%;
+        max-width: 400px;
+        background: var(--bg-secondary);
+        border: 2px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.25rem;
+        margin-top: 0.5rem;
+    }
+    
+    .main-file-box:hover {
+        border-color: rgba(99, 102, 241, 0.3);
+    }
+    
+    /* Main upload area */
+    .file-upload-area.main-upload {
+        border: 2px dashed var(--border-color);
+        border-radius: 10px;
+        padding: 1.5rem;
+        text-align: center;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        position: relative;
+    }
+    
+    .file-upload-area.main-upload:hover {
+        border-color: var(--accent-primary);
+        background: rgba(99, 102, 241, 0.05);
+    }
+    
+    .file-upload-area.main-upload.has-file {
+        border-style: solid;
+        border-color: var(--success);
+        background: rgba(34, 197, 94, 0.05);
+    }
+    
+    .file-upload-area.main-upload.uploading {
+        border-color: var(--accent-primary);
+        background: rgba(99, 102, 241, 0.05);
+        pointer-events: none;
+    }
+    
+    /* Upload Loader */
+    .upload-loader {
+        display: none;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.75rem;
+    }
+    
+    .upload-loader.active {
+        display: flex;
+    }
+    
+    .upload-spinner {
+        width: 32px;
+        height: 32px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    .upload-loader-text {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    .upload-icon-main {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .upload-placeholder {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+    }
+    
+    .file-types {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        opacity: 0.7;
+    }
+    
+    .upload-success {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 0.5rem;
+        position: relative;
+    }
+    
+    .file-icon-main {
+        font-size: 2rem;
+    }
+    
+    .file-details-main {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .file-name {
+        font-weight: 600;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+    
+    .file-meta {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    
+    .remove-btn-main {
+        position: absolute;
+        top: -0.5rem;
+        right: -0.5rem;
+        background: var(--error);
+        border: none;
+        color: white;
+        width: 22px;
+        height: 22px;
+        border-radius: 50%;
+        cursor: pointer;
+        font-size: 0.8rem;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .remove-btn-main:hover {
+        background: #dc2626;
+    }
+    
+    /* Column selection for main file */
+    .column-selection-main {
+        margin-top: 1rem;
+        padding-top: 1rem;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .columns-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        display: block;
+        margin-bottom: 0.4rem;
+    }
+    
+    /* Flow Arrow */
+    .flow-arrow {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin: 1.5rem 0 0.5rem;
+        position: relative;
+    }
+    
+    .arrow-line {
+        width: 2px;
+        height: 30px;
+        background: linear-gradient(to bottom, var(--accent-primary), var(--accent-secondary));
+    }
+    
+    .arrow-icon {
+        font-size: 1.5rem;
+        color: var(--accent-primary);
+        animation: bounce 1.5s infinite;
+    }
+    
+    .arrow-text {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+    
+    @keyframes bounce {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(4px); }
+    }
+    
+    /* Multiselect Styles */
+    .multiselect-container {
+        position: relative;
+        z-index: 100;
+    }
+    
+    .multiselect-input-wrapper {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        padding: 0.5rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        min-height: 38px;
+        cursor: text;
+        align-items: center;
+    }
+    
+    .multiselect-input-wrapper:focus-within {
+        border-color: var(--accent-primary);
+    }
+    
+    .multiselect-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.15rem 0.4rem;
+        background: rgba(99, 102, 241, 0.2);
+        border: 1px solid var(--accent-primary);
+        border-radius: 4px;
+        font-size: 0.75rem;
+        color: var(--text-primary);
+        white-space: nowrap;
+    }
+    
+    .multiselect-tag-remove {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0;
+        font-size: 0.85rem;
+        line-height: 1;
+    }
+    
+    .multiselect-tag-remove:hover {
+        color: var(--error);
+    }
+    
+    .multiselect-input {
+        flex: 1;
+        min-width: 80px;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        font-size: 0.8rem;
+        outline: none;
+        padding: 0.15rem;
+    }
+    
+    .multiselect-input::placeholder {
+        color: var(--text-muted);
+    }
+    
+    .multiselect-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--bg-secondary);
+        border: 1px solid var(--accent-primary);
+        border-top: none;
+        border-radius: 0 0 8px 8px;
+        max-height: 160px;
+        overflow-y: auto;
+        z-index: 1000;
+        display: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .multiselect-dropdown.open {
+        display: block;
+    }
+    
+    .multiselect-option {
+        padding: 0.5rem 0.6rem;
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: var(--text-secondary);
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    
+    .multiselect-option:hover {
+        background: rgba(99, 102, 241, 0.1);
+    }
+    
+    .multiselect-option.selected {
+        background: rgba(99, 102, 241, 0.15);
+        color: var(--text-primary);
+    }
+    
+    .multiselect-option-check {
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--border-color);
+        border-radius: 3px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.6rem;
+        flex-shrink: 0;
+    }
+    
+    .multiselect-option.selected .multiselect-option-check {
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+        color: white;
+    }
+    
+    .multiselect-no-results {
+        padding: 0.6rem;
+        color: var(--text-muted);
+        text-align: center;
+        font-size: 0.8rem;
+    }
+    
+    .multiselect-actions {
+        display: flex;
+        gap: 0.5rem;
+        margin-top: 0.4rem;
+    }
+    
+    .multiselect-actions .btn {
+        padding: 0.2rem 0.4rem;
+        font-size: 0.7rem;
+    }
+    
+    .multiselect-count {
+        font-size: 0.7rem;
+        color: var(--text-muted);
+        margin-top: 0.3rem;
+        text-align: center;
+    }
+    
+    /* Z-index for cards */
+    #main-file-card {
+        position: relative;
+        z-index: 10;
+    }
+    
+    #child-files-card {
+        position: relative;
+        z-index: 5;
+    }
+    
+    /* Child files grid - 3 per row */
+    .child-files-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    @media (max-width: 900px) {
+        .child-files-grid {
+            grid-template-columns: repeat(2, 1fr);
+        }
+    }
+    
+    @media (max-width: 600px) {
+        .child-files-grid {
+            grid-template-columns: 1fr;
+        }
+        .main-file-box {
+            max-width: 100%;
+        }
+    }
+    
+    /* Compact child file item */
+    .child-file-item {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 0.75rem;
+        position: relative;
+        transition: all 0.2s ease;
+    }
+    
+    .child-file-item:hover {
+        border-color: rgba(99, 102, 241, 0.3);
+    }
+    
+    .child-file-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 0.5rem;
+    }
+    
+    .child-file-title {
+        font-weight: 600;
+        font-size: 0.8rem;
+        color: var(--text-primary);
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    
+    .child-number {
+        background: var(--accent-secondary);
+        color: white;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.7rem;
+    }
+    
+    .remove-child-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 1rem;
+        padding: 0;
+        line-height: 1;
+    }
+    
+    .remove-child-btn:hover {
+        color: var(--error);
+    }
+    
+    /* Compact child upload area */
+    .child-upload-area {
+        border: 1px dashed var(--border-color);
+        border-radius: 8px;
+        padding: 0.75rem;
+        text-align: center;
+        cursor: pointer;
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        transition: all 0.2s ease;
+        position: relative;
+    }
+    
+    .child-upload-area:hover {
+        border-color: var(--accent-primary);
+        background: rgba(99, 102, 241, 0.05);
+    }
+    
+    .child-upload-area.has-file {
+        border-style: solid;
+        border-color: var(--success);
+        background: rgba(34, 197, 94, 0.08);
+    }
+    
+    .child-upload-area.uploading {
+        border-color: var(--accent-primary);
+        background: rgba(99, 102, 241, 0.05);
+        pointer-events: none;
+    }
+    
+    /* Child upload loader */
+    .child-upload-loader {
+        display: none;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+    
+    .child-upload-loader.active {
+        display: flex;
+    }
+    
+    .child-spinner {
+        width: 18px;
+        height: 18px;
+        border: 2px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    .child-placeholder {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.3rem;
+    }
+    
+    .child-success {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 0.5rem;
+    }
+    
+    .child-file-info {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+        min-width: 0;
+        flex: 1;
+    }
+    
+    .child-file-details {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+    }
+    
+    .child-file-name {
+        font-weight: 500;
+        font-size: 0.75rem;
+        color: var(--text-primary);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+    
+    .child-file-meta {
+        font-size: 0.65rem;
+        color: var(--text-muted);
+    }
+    
+    .remove-btn {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 0.9rem;
+        padding: 0;
+    }
+    
+    .remove-btn:hover {
+        color: var(--error);
+    }
+    
+    /* Child column selection */
+    .child-columns-section {
+        margin-top: 0.5rem;
+    }
+    
+    /* Rename Section */
+    .rename-section, .rename-section-child {
+        margin-top: 0.75rem;
+        padding-top: 0.75rem;
+        border-top: 1px solid var(--border-color);
+    }
+    
+    .rename-list {
+        display: flex;
+        flex-direction: column;
+        gap: 0.4rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .rename-row {
+        display: flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+    
+    .rename-select {
+        padding: 0.35rem 0.5rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 5px;
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .rename-select:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .rename-input {
+        padding: 0.35rem 0.5rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 5px;
+        color: var(--text-primary);
+        font-size: 0.75rem;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .rename-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .rename-arrow {
+        color: var(--text-muted);
+        font-size: 0.8rem;
+        flex-shrink: 0;
+    }
+    
+    .rename-remove {
+        background: none;
+        border: none;
+        color: var(--text-muted);
+        cursor: pointer;
+        font-size: 0.9rem;
+        padding: 0.2rem;
+        flex-shrink: 0;
+    }
+    
+    .rename-remove:hover {
+        color: var(--error);
+    }
+    
+    .add-rename-btn {
+        font-size: 0.7rem;
+        padding: 0.25rem 0.5rem;
+    }
+    
+    .add-child-btn-compact {
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+    }
+    
+    /* Config grid */
+    .config-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr auto;
+        gap: 1rem;
+        align-items: end;
+    }
+    
+    .config-item-full {
+        grid-column: 1 / -1;
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    
+    .config-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    
+    .merge-select {
+        padding: 0.6rem 0.75rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+    
+    .merge-select:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .merge-column-multiselect {
+        max-width: 500px;
+    }
+    
+    .merge-column-multiselect .multiselect-input-wrapper {
+        background: var(--bg-secondary);
+    }
+    
+    @media (max-width: 600px) {
+        .config-grid {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    /* Results */
+    .columns-tags {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.4rem;
+        margin-top: 0.5rem;
+    }
+    
+    .column-tag {
+        padding: 0.25rem 0.5rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        font-size: 0.75rem;
+        color: var(--text-secondary);
+    }
+    
+    .preview-section {
+        margin-top: 1rem;
+    }
+    
+    .table-container {
+        overflow-x: auto;
+        margin-top: 0.5rem;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        max-height: 350px;
+        overflow-y: auto;
+    }
+    
+    .preview-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.8rem;
+    }
+    
+    .preview-table th,
+    .preview-table td {
+        padding: 0.5rem 0.75rem;
+        text-align: left;
+        border-bottom: 1px solid var(--border-color);
+        white-space: nowrap;
+    }
+    
+    .preview-table th {
+        background: var(--bg-tertiary);
+        font-weight: 600;
+        color: var(--text-primary);
+        position: sticky;
+        top: 0;
+    }
+    
+    .preview-table tr:hover {
+        background: rgba(99, 102, 241, 0.05);
+    }
+    
+    .preview-table td {
+        color: var(--text-secondary);
+        max-width: 150px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+</style>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const csrfToken = document.querySelector('[name=csrfmiddlewaretoken]').value;
+    
+    // Elements
+    const errorContainer = document.getElementById('error-container');
+    const errorMessage = document.getElementById('error-message');
+    
+    // Main file elements
+    const mainUploadArea = document.getElementById('main-upload-area');
+    const mainFileInput = document.getElementById('main-file-input');
+    const mainUploadPlaceholder = document.getElementById('main-upload-placeholder');
+    const mainUploadLoader = document.getElementById('main-upload-loader');
+    const mainUploadSuccess = document.getElementById('main-upload-success');
+    const mainFileName = document.getElementById('main-file-name');
+    const mainFileMeta = document.getElementById('main-file-meta');
+    const mainRemoveBtn = document.getElementById('main-remove-btn');
+    const mainColumnsSection = document.getElementById('main-columns-section');
+    const mainMultiselect = document.getElementById('main-multiselect');
+    const mainRenameSection = document.getElementById('main-rename-section');
+    const mainRenameList = document.getElementById('main-rename-list');
+    const mainAddRenameBtn = document.getElementById('main-add-rename');
+    
+    // Child files elements
+    const childFilesContainer = document.getElementById('child-files-container');
+    const addChildBtn = document.getElementById('add-child-btn');
+    const childCount = document.getElementById('child-count');
+    
+    // Merge config elements
+    const mergeConfigCard = document.getElementById('merge-config-card');
+    const mergeColumnMultiselectContainer = document.getElementById('merge-column-multiselect');
+    const mergeTypeSelect = document.getElementById('merge-type-select');
+    const mergeBtn = document.getElementById('merge-btn');
+    let mergeColumnMultiselect = null;
+    
+    // Loading & Results
+    const loadingCard = document.getElementById('loading-card');
+    const resultsCard = document.getElementById('results-card');
+    const downloadBtn = document.getElementById('download-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    
+    // State
+    let mainFile = null;
+    let mainMultiselectInstance = null;
+    let childFiles = [];
+    let childFileCounter = 0;
+    
+    // ============================================
+    // Multiselect Component
+    // ============================================
+    
+    // Special multiselect for merge column selection (with onChange callback)
+    class MergeColumnMultiselect {
+        constructor(container, options = [], onChange = null) {
+            this.container = container;
+            this.options = options;
+            this.selectedValues = new Set();
+            this.isOpen = false;
+            this.onChange = onChange;
+            this.render();
+            this.bindEvents();
+        }
+        
+        render() {
+            this.container.innerHTML = `
+                <div class="multiselect-input-wrapper">
+                    <input type="text" class="multiselect-input" placeholder="Search & select merge column(s)...">
+                </div>
+                <div class="multiselect-dropdown"></div>
+                <div class="multiselect-count"></div>
+            `;
+            
+            this.inputWrapper = this.container.querySelector('.multiselect-input-wrapper');
+            this.input = this.container.querySelector('.multiselect-input');
+            this.dropdown = this.container.querySelector('.multiselect-dropdown');
+            this.countDisplay = this.container.querySelector('.multiselect-count');
+            
+            this.renderTags();
+            this.renderDropdown();
+            this.updateCount();
+        }
+        
+        renderTags() {
+            this.inputWrapper.querySelectorAll('.multiselect-tag').forEach(tag => tag.remove());
+            
+            const selectedArray = Array.from(this.selectedValues);
+            
+            selectedArray.forEach(value => {
+                const tag = document.createElement('span');
+                tag.className = 'multiselect-tag';
+                tag.innerHTML = `
+                    ${escapeHtml(value.length > 15 ? value.slice(0, 15) + '...' : value)}
+                    <button type="button" class="multiselect-tag-remove" data-value="${escapeHtml(value)}">×</button>
+                `;
+                this.inputWrapper.insertBefore(tag, this.input);
+            });
+        }
+        
+        renderDropdown(filter = '') {
+            const filterLower = filter.toLowerCase();
+            const filteredOptions = this.options.filter(opt => 
+                opt.toLowerCase().includes(filterLower)
+            );
+            
+            if (filteredOptions.length === 0) {
+                this.dropdown.innerHTML = '<div class="multiselect-no-results">No common columns found</div>';
+                return;
+            }
+            
+            this.dropdown.innerHTML = filteredOptions.map((opt) => `
+                <div class="multiselect-option ${this.selectedValues.has(opt) ? 'selected' : ''}" data-value="${escapeHtml(opt)}">
+                    <span class="multiselect-option-check">${this.selectedValues.has(opt) ? '✓' : ''}</span>
+                    <span>${escapeHtml(opt)}</span>
+                </div>
+            `).join('');
+        }
+        
+        updateCount() {
+            if (this.selectedValues.size === 0) {
+                this.countDisplay.textContent = `${this.options.length} common column(s) available`;
+            } else {
+                this.countDisplay.textContent = `${this.selectedValues.size} column(s) selected for merge`;
+            }
+        }
+        
+        bindEvents() {
+            this.inputWrapper.addEventListener('click', () => {
+                this.input.focus();
+                this.open();
+            });
+            
+            this.input.addEventListener('focus', () => this.open());
+            this.input.addEventListener('input', () => {
+                this.renderDropdown(this.input.value);
+                this.open();
+            });
+            
+            this.input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.close();
+                } else if (e.key === 'Backspace' && this.input.value === '' && this.selectedValues.size > 0) {
+                    const lastValue = Array.from(this.selectedValues).pop();
+                    this.toggle(lastValue);
+                }
+            });
+            
+            this.dropdown.addEventListener('click', (e) => {
+                const option = e.target.closest('.multiselect-option');
+                if (option) {
+                    this.toggle(option.dataset.value);
+                }
+            });
+            
+            this.inputWrapper.addEventListener('click', (e) => {
+                if (e.target.classList.contains('multiselect-tag-remove')) {
+                    e.stopPropagation();
+                    this.toggle(e.target.dataset.value);
+                }
+            });
+            
+            document.addEventListener('click', (e) => {
+                if (!this.container.contains(e.target)) {
+                    this.close();
+                }
+            });
+        }
+        
+        toggle(value) {
+            if (this.selectedValues.has(value)) {
+                this.selectedValues.delete(value);
+            } else {
+                this.selectedValues.add(value);
+            }
+            this.renderTags();
+            this.renderDropdown(this.input.value);
+            this.updateCount();
+            if (this.onChange) this.onChange();
+        }
+        
+        open() {
+            this.isOpen = true;
+            this.dropdown.classList.add('open');
+        }
+        
+        close() {
+            this.isOpen = false;
+            this.dropdown.classList.remove('open');
+            this.input.value = '';
+            this.renderDropdown();
+        }
+        
+        getSelectedValues() {
+            return Array.from(this.selectedValues);
+        }
+    }
+    
+    class Multiselect {
+        constructor(container, options = [], selectAllByDefault = false) {
+            this.container = container;
+            this.options = options;
+            this.selectedValues = selectAllByDefault ? new Set(options) : new Set();
+            this.isOpen = false;
+            this.render();
+            this.bindEvents();
+        }
+        
+        render() {
+            this.container.innerHTML = `
+                <div class="multiselect-input-wrapper">
+                    <input type="text" class="multiselect-input" placeholder="Search columns...">
+                </div>
+                <div class="multiselect-dropdown"></div>
+                <div class="multiselect-actions">
+                    <button type="button" class="btn btn-sm btn-secondary select-all-btn">All</button>
+                    <button type="button" class="btn btn-sm btn-secondary deselect-all-btn">None</button>
+                </div>
+                <div class="multiselect-count"></div>
+            `;
+            
+            this.inputWrapper = this.container.querySelector('.multiselect-input-wrapper');
+            this.input = this.container.querySelector('.multiselect-input');
+            this.dropdown = this.container.querySelector('.multiselect-dropdown');
+            this.selectAllBtn = this.container.querySelector('.select-all-btn');
+            this.deselectAllBtn = this.container.querySelector('.deselect-all-btn');
+            this.countDisplay = this.container.querySelector('.multiselect-count');
+            
+            this.renderTags();
+            this.renderDropdown();
+            this.updateCount();
+        }
+        
+        renderTags() {
+            this.inputWrapper.querySelectorAll('.multiselect-tag').forEach(tag => tag.remove());
+            
+            const selectedArray = Array.from(this.selectedValues);
+            const maxDisplay = 2;
+            const displayItems = selectedArray.slice(0, maxDisplay);
+            
+            displayItems.forEach(value => {
+                const tag = document.createElement('span');
+                tag.className = 'multiselect-tag';
+                tag.innerHTML = `
+                    ${escapeHtml(value.length > 12 ? value.slice(0, 12) + '...' : value)}
+                    <button type="button" class="multiselect-tag-remove" data-value="${escapeHtml(value)}">×</button>
+                `;
+                this.inputWrapper.insertBefore(tag, this.input);
+            });
+            
+            if (selectedArray.length > maxDisplay) {
+                const moreTag = document.createElement('span');
+                moreTag.className = 'multiselect-tag';
+                moreTag.style.background = 'var(--bg-tertiary)';
+                moreTag.style.borderColor = 'var(--border-color)';
+                moreTag.textContent = `+${selectedArray.length - maxDisplay}`;
+                this.inputWrapper.insertBefore(moreTag, this.input);
+            }
+        }
+        
+        renderDropdown(filter = '') {
+            const filterLower = filter.toLowerCase();
+            const filteredOptions = this.options.filter(opt => 
+                opt.toLowerCase().includes(filterLower)
+            );
+            
+            if (filteredOptions.length === 0) {
+                this.dropdown.innerHTML = '<div class="multiselect-no-results">No columns found</div>';
+                return;
+            }
+            
+            this.dropdown.innerHTML = filteredOptions.map((opt, index) => `
+                <div class="multiselect-option ${this.selectedValues.has(opt) ? 'selected' : ''}" data-value="${escapeHtml(opt)}">
+                    <span class="multiselect-option-check">${this.selectedValues.has(opt) ? '✓' : ''}</span>
+                    <span>${escapeHtml(opt)}</span>
+                </div>
+            `).join('');
+        }
+        
+        updateCount() {
+            this.countDisplay.textContent = `${this.selectedValues.size}/${this.options.length} selected`;
+        }
+        
+        bindEvents() {
+            this.inputWrapper.addEventListener('click', () => {
+                this.input.focus();
+                this.open();
+            });
+            
+            this.input.addEventListener('focus', () => this.open());
+            this.input.addEventListener('input', () => {
+                this.renderDropdown(this.input.value);
+                this.open();
+            });
+            
+            this.input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.close();
+                } else if (e.key === 'Backspace' && this.input.value === '' && this.selectedValues.size > 0) {
+                    const lastValue = Array.from(this.selectedValues).pop();
+                    this.toggle(lastValue);
+                }
+            });
+            
+            this.dropdown.addEventListener('click', (e) => {
+                const option = e.target.closest('.multiselect-option');
+                if (option) {
+                    this.toggle(option.dataset.value);
+                }
+            });
+            
+            this.inputWrapper.addEventListener('click', (e) => {
+                if (e.target.classList.contains('multiselect-tag-remove')) {
+                    e.stopPropagation();
+                    this.toggle(e.target.dataset.value);
+                }
+            });
+            
+            this.selectAllBtn.addEventListener('click', () => {
+                this.options.forEach(opt => this.selectedValues.add(opt));
+                this.renderTags();
+                this.renderDropdown(this.input.value);
+                this.updateCount();
+            });
+            
+            this.deselectAllBtn.addEventListener('click', () => {
+                this.selectedValues.clear();
+                this.renderTags();
+                this.renderDropdown(this.input.value);
+                this.updateCount();
+            });
+            
+            document.addEventListener('click', (e) => {
+                if (!this.container.contains(e.target)) {
+                    this.close();
+                }
+            });
+        }
+        
+        toggle(value) {
+            if (this.selectedValues.has(value)) {
+                this.selectedValues.delete(value);
+            } else {
+                this.selectedValues.add(value);
+            }
+            this.renderTags();
+            this.renderDropdown(this.input.value);
+            this.updateCount();
+        }
+        
+        open() {
+            this.isOpen = true;
+            this.dropdown.classList.add('open');
+        }
+        
+        close() {
+            this.isOpen = false;
+            this.dropdown.classList.remove('open');
+            this.input.value = '';
+            this.renderDropdown();
+        }
+        
+        getSelectedValues() {
+            return Array.from(this.selectedValues);
+        }
+    }
+    
+    // ============================================
+    // Main File Upload
+    // ============================================
+    
+    mainUploadArea.addEventListener('click', () => mainFileInput.click());
+    mainFileInput.addEventListener('change', handleMainFileSelect);
+    
+    mainUploadArea.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        mainUploadArea.classList.add('dragover');
+    });
+    
+    mainUploadArea.addEventListener('dragleave', () => {
+        mainUploadArea.classList.remove('dragover');
+    });
+    
+    mainUploadArea.addEventListener('drop', (e) => {
+        e.preventDefault();
+        mainUploadArea.classList.remove('dragover');
+        if (e.dataTransfer.files.length) {
+            mainFileInput.files = e.dataTransfer.files;
+            handleMainFileSelect();
+        }
+    });
+    
+    async function handleMainFileSelect() {
+        const file = mainFileInput.files[0];
+        if (!file) return;
+        
+        // Show loader
+        mainUploadPlaceholder.classList.add('hidden');
+        mainUploadLoader.classList.add('active');
+        mainUploadArea.classList.add('uploading');
+        
+        try {
+            const result = await uploadFile(file, 'main');
+            mainFile = result;
+            
+            mainUploadLoader.classList.remove('active');
+            mainUploadSuccess.classList.remove('hidden');
+            mainUploadArea.classList.remove('uploading');
+            mainUploadArea.classList.add('has-file');
+            mainFileName.textContent = result.filename;
+            mainFileMeta.textContent = `${result.row_count} rows • ${result.columns.length} cols`;
+            
+            mainMultiselectInstance = new Multiselect(mainMultiselect, result.columns, true);
+            mainColumnsSection.classList.remove('hidden');
+            
+            // Show rename section and wire up button
+            mainRenameSection.classList.remove('hidden');
+            mainRenameList.innerHTML = '';
+            mainAddRenameBtn.onclick = () => addRenameRow(mainRenameList, result.columns);
+            
+            updateMergeConfig();
+            
+        } catch (error) {
+            // Hide loader and show placeholder again on error
+            mainUploadLoader.classList.remove('active');
+            mainUploadPlaceholder.classList.remove('hidden');
+            mainUploadArea.classList.remove('uploading');
+            showError(error.message);
+        }
+    }
+    
+    mainRemoveBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        mainFile = null;
+        mainMultiselectInstance = null;
+        mainFileInput.value = '';
+        mainUploadPlaceholder.classList.remove('hidden');
+        mainUploadSuccess.classList.add('hidden');
+        mainUploadArea.classList.remove('has-file');
+        mainColumnsSection.classList.add('hidden');
+        mainMultiselect.innerHTML = '';
+        mainRenameSection.classList.add('hidden');
+        mainRenameList.innerHTML = '';
+        updateMergeConfig();
+    });
+    
+    // ============================================
+    // Child Files Upload
+    // ============================================
+    
+    addChildBtn.addEventListener('click', addChildFileUpload);
+    
+    function addChildFileUpload() {
+        childFileCounter++;
+        const childId = childFileCounter;
+        
+        const childItem = document.createElement('div');
+        childItem.className = 'child-file-item';
+        childItem.id = `child-item-${childId}`;
+        childItem.innerHTML = `
+            <div class="child-file-header">
+                <div class="child-file-title">
+                    <span class="child-number">${childFiles.length + 1}</span>
+                    Child File
+                </div>
+                <button class="remove-child-btn" data-child-id="${childId}">✕</button>
+            </div>
+            
+            <div class="child-upload-area" data-child-id="${childId}">
+                <input type="file" class="child-file-input" data-child-id="${childId}" accept=".xlsx,.xls,.csv" hidden>
+                <div class="child-placeholder">
+                    <span>📁</span> Upload
+                </div>
+                <div class="child-upload-loader">
+                    <div class="child-spinner"></div>
+                    <span>Uploading...</span>
+                </div>
+                <div class="child-success hidden">
+                    <div class="child-file-info">
+                        <span>📄</span>
+                        <div class="child-file-details">
+                            <span class="child-file-name"></span>
+                            <span class="child-file-meta"></span>
+                        </div>
+                    </div>
+                    <button class="remove-btn child-remove-file-btn" data-child-id="${childId}">✕</button>
+                </div>
+            </div>
+            
+            <div class="child-columns-section hidden">
+                <div class="multiselect-container child-multiselect"></div>
+                <div class="rename-section-child">
+                    <label class="columns-label" style="margin-top: 0.5rem;">Rename (optional):</label>
+                    <div class="rename-list child-rename-list"></div>
+                    <button type="button" class="btn btn-sm btn-secondary add-rename-btn child-add-rename">+ Rename</button>
+                </div>
+            </div>
+        `;
+        
+        childFilesContainer.appendChild(childItem);
+        
+        const uploadArea = childItem.querySelector('.child-upload-area');
+        const fileInput = childItem.querySelector('.child-file-input');
+        const removeBtn = childItem.querySelector('.remove-child-btn');
+        const removeFileBtn = childItem.querySelector('.child-remove-file-btn');
+        
+        uploadArea.addEventListener('click', (e) => {
+            if (!e.target.classList.contains('remove-btn') && !e.target.classList.contains('child-remove-file-btn')) {
+                fileInput.click();
+            }
+        });
+        fileInput.addEventListener('change', () => handleChildFileSelect(childId));
+        removeBtn.addEventListener('click', () => removeChildFile(childId));
+        removeFileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            clearChildFile(childId);
+        });
+        
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        
+        uploadArea.addEventListener('dragleave', () => {
+            uploadArea.classList.remove('dragover');
+        });
+        
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                handleChildFileSelect(childId);
+            }
+        });
+        
+        childFiles.push({ id: childId, data: null, multiselect: null });
+        updateChildCount();
+    }
+    
+    async function handleChildFileSelect(childId) {
+        const childItem = document.getElementById(`child-item-${childId}`);
+        const fileInput = childItem.querySelector('.child-file-input');
+        const file = fileInput.files[0];
+        
+        if (!file) return;
+        
+        const placeholder = childItem.querySelector('.child-placeholder');
+        const loader = childItem.querySelector('.child-upload-loader');
+        const success = childItem.querySelector('.child-success');
+        const uploadArea = childItem.querySelector('.child-upload-area');
+        
+        // Show loader
+        placeholder.classList.add('hidden');
+        loader.classList.add('active');
+        uploadArea.classList.add('uploading');
+        
+        try {
+            const result = await uploadFile(file, 'child');
+            
+            const childIndex = childFiles.findIndex(c => c.id === childId);
+            if (childIndex !== -1) {
+                childFiles[childIndex].data = result;
+            }
+            
+            const fileName = childItem.querySelector('.child-file-name');
+            const fileMeta = childItem.querySelector('.child-file-meta');
+            const columnsSection = childItem.querySelector('.child-columns-section');
+            const multiselectContainer = childItem.querySelector('.child-multiselect');
+            
+            loader.classList.remove('active');
+            success.classList.remove('hidden');
+            uploadArea.classList.remove('uploading');
+            uploadArea.classList.add('has-file');
+            fileName.textContent = result.filename;
+            fileMeta.textContent = `${result.row_count}r • ${result.columns.length}c`;
+            
+            const multiselect = new Multiselect(multiselectContainer, result.columns, false);
+            childFiles[childIndex].multiselect = multiselect;
+            columnsSection.classList.remove('hidden');
+            
+            // Wire up rename button for this child
+            const renameList = childItem.querySelector('.child-rename-list');
+            const addRenameBtn = childItem.querySelector('.child-add-rename');
+            renameList.innerHTML = '';
+            addRenameBtn.onclick = () => addRenameRow(renameList, result.columns);
+            
+            updateMergeConfig();
+            updateChildCount();
+            
+        } catch (error) {
+            // Hide loader and show placeholder again on error
+            loader.classList.remove('active');
+            placeholder.classList.remove('hidden');
+            uploadArea.classList.remove('uploading');
+            showError(error.message);
+        }
+    }
+    
+    function clearChildFile(childId) {
+        const childItem = document.getElementById(`child-item-${childId}`);
+        const fileInput = childItem.querySelector('.child-file-input');
+        const placeholder = childItem.querySelector('.child-placeholder');
+        const success = childItem.querySelector('.child-success');
+        const uploadArea = childItem.querySelector('.child-upload-area');
+        const columnsSection = childItem.querySelector('.child-columns-section');
+        const multiselectContainer = childItem.querySelector('.child-multiselect');
+        
+        const childIndex = childFiles.findIndex(c => c.id === childId);
+        if (childIndex !== -1) {
+            childFiles[childIndex].data = null;
+            childFiles[childIndex].multiselect = null;
+        }
+        
+        fileInput.value = '';
+        placeholder.classList.remove('hidden');
+        success.classList.add('hidden');
+        uploadArea.classList.remove('has-file');
+        columnsSection.classList.add('hidden');
+        multiselectContainer.innerHTML = '';
+        
+        // Clear rename list
+        const renameList = childItem.querySelector('.child-rename-list');
+        if (renameList) renameList.innerHTML = '';
+        
+        updateMergeConfig();
+        updateChildCount();
+    }
+    
+    function removeChildFile(childId) {
+        const childItem = document.getElementById(`child-item-${childId}`);
+        childItem.remove();
+        
+        childFiles = childFiles.filter(c => c.id !== childId);
+        updateChildCount();
+        renumberChildren();
+        updateMergeConfig();
+    }
+    
+    function renumberChildren() {
+        childFilesContainer.querySelectorAll('.child-file-item').forEach((item, index) => {
+            item.querySelector('.child-number').textContent = index + 1;
+        });
+    }
+    
+    function updateChildCount() {
+        const uploadedCount = childFiles.filter(c => c.data).length;
+        childCount.textContent = `(${uploadedCount} uploaded)`;
+    }
+    
+    // ============================================
+    // Helper Functions
+    // ============================================
+    
+    async function uploadFile(file, fileType) {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('file_type', fileType);
+        
+        const response = await fetch('/merge/upload/', {
+            method: 'POST',
+            body: formData,
+            headers: {
+                'X-CSRFToken': csrfToken
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Upload failed');
+        }
+        
+        return data;
+    }
+    
+    function getColumnsWithRenames(originalColumns, renameContainer) {
+        // Apply renames to column list
+        const renames = renameContainer ? getRenames(renameContainer) : {};
+        return originalColumns.map(col => renames[col] || col);
+    }
+    
+    function updateMergeConfig() {
+        const hasMain = mainFile !== null;
+        const hasChildren = childFiles.some(c => c.data !== null);
+        
+        if (hasMain && hasChildren) {
+            mergeConfigCard.classList.remove('hidden');
+            
+            // Get main file columns with renames applied
+            const mainColumnsRenamed = getColumnsWithRenames(mainFile.columns, mainRenameList);
+            const allColumnSets = [new Set(mainColumnsRenamed)];
+            
+            // Get child file columns with renames applied
+            childFiles.forEach(c => {
+                if (c.data) {
+                    const childItem = document.getElementById(`child-item-${c.id}`);
+                    const renameList = childItem ? childItem.querySelector('.child-rename-list') : null;
+                    const childColumnsRenamed = getColumnsWithRenames(c.data.columns, renameList);
+                    allColumnSets.push(new Set(childColumnsRenamed));
+                }
+            });
+            
+            // Find common columns (after renames)
+            let commonColumns = [...allColumnSets[0]];
+            for (let i = 1; i < allColumnSets.length; i++) {
+                commonColumns = commonColumns.filter(col => allColumnSets[i].has(col));
+            }
+            
+            // Create or update merge column multiselect
+            if (mergeColumnMultiselect) {
+                // Check if columns changed
+                const currentOptions = [...mergeColumnMultiselect.options].sort().join(',');
+                const newOptions = [...commonColumns].sort().join(',');
+                if (currentOptions !== newOptions) {
+                    // Preserve selected values that still exist
+                    const prevSelected = mergeColumnMultiselect.getSelectedValues();
+                    mergeColumnMultiselect = new MergeColumnMultiselect(mergeColumnMultiselectContainer, commonColumns, updateMergeButton);
+                    // Restore selections that are still valid
+                    prevSelected.forEach(val => {
+                        if (commonColumns.includes(val)) {
+                            mergeColumnMultiselect.selectedValues.add(val);
+                        }
+                    });
+                    mergeColumnMultiselect.renderTags();
+                    mergeColumnMultiselect.renderDropdown();
+                    mergeColumnMultiselect.updateCount();
+                }
+            } else {
+                mergeColumnMultiselect = new MergeColumnMultiselect(mergeColumnMultiselectContainer, commonColumns, updateMergeButton);
+            }
+            
+            updateMergeButton();
+        } else {
+            mergeConfigCard.classList.add('hidden');
+            mergeColumnMultiselect = null;
+            mergeColumnMultiselectContainer.innerHTML = '';
+        }
+    }
+    
+    function updateMergeButton() {
+        const hasMain = mainFile !== null;
+        const hasChildren = childFiles.some(c => c.data !== null);
+        const hasMergeColumn = mergeColumnMultiselect && mergeColumnMultiselect.getSelectedValues().length > 0;
+        
+        mergeBtn.disabled = !(hasMain && hasChildren && hasMergeColumn);
+    }
+    
+    // ============================================
+    // Merge Operation
+    // ============================================
+    
+    mergeBtn.addEventListener('click', performMerge);
+    
+    async function performMerge() {
+        hideError();
+        loadingCard.classList.remove('hidden');
+        mergeBtn.disabled = true;
+        
+        try {
+            const mainColumns = mainMultiselectInstance ? mainMultiselectInstance.getSelectedValues() : [];
+            const mainRenames = getRenames(mainRenameList);
+            
+            const childFilesData = [];
+            childFiles.forEach(child => {
+                if (child.data && child.multiselect) {
+                    const childItem = document.getElementById(`child-item-${child.id}`);
+                    const renameList = childItem.querySelector('.child-rename-list');
+                    childFilesData.push({
+                        file_id: child.data.file_id,
+                        columns: child.multiselect.getSelectedValues(),
+                        renames: renameList ? getRenames(renameList) : {}
+                    });
+                }
+            });
+            
+            const mergeColumns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
+            
+            const response = await fetch('/merge/perform/', {
+                method: 'POST',
+                body: JSON.stringify({
+                    main_file_id: mainFile.file_id,
+                    main_columns: mainColumns,
+                    main_renames: mainRenames,
+                    child_files: childFilesData,
+                    merge_columns: mergeColumns,
+                    merge_type: mergeTypeSelect.value
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                displayResults(data);
+            } else {
+                showError(data.error || 'Merge failed');
+            }
+            
+        } catch (error) {
+            showError('Merge failed: ' + error.message);
+        } finally {
+            loadingCard.classList.add('hidden');
+            mergeBtn.disabled = false;
+        }
+    }
+    
+    function displayResults(data) {
+        document.getElementById('result-rows').textContent = data.total_rows.toLocaleString();
+        document.getElementById('result-columns').textContent = data.total_columns;
+        
+        const columnsTags = document.getElementById('columns-tags');
+        columnsTags.innerHTML = '';
+        data.columns.forEach(col => {
+            const tag = document.createElement('span');
+            tag.className = 'column-tag';
+            tag.textContent = col;
+            columnsTags.appendChild(tag);
+        });
+        
+        const thead = document.getElementById('preview-thead');
+        const tbody = document.getElementById('preview-tbody');
+        
+        thead.innerHTML = '<tr>' + data.columns.map(col => `<th>${escapeHtml(col)}</th>`).join('') + '</tr>';
+        
+        tbody.innerHTML = '';
+        data.preview.forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = data.columns.map(col => `<td>${escapeHtml(String(row[col] ?? ''))}</td>`).join('');
+            tbody.appendChild(tr);
+        });
+        
+        downloadBtn.href = data.download_url;
+        
+        resultsCard.classList.remove('hidden');
+        resultsCard.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    // ============================================
+    // Reset
+    // ============================================
+    
+    resetBtn.addEventListener('click', () => {
+        location.reload();
+    });
+    
+    // ============================================
+    // Utilities
+    // ============================================
+    
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorContainer.classList.remove('hidden');
+        errorContainer.scrollIntoView({ behavior: 'smooth' });
+    }
+    
+    function hideError() {
+        errorContainer.classList.add('hidden');
+    }
+    
+    // ============================================
+    // Rename Functions
+    // ============================================
+    
+    function addRenameRow(container, columns) {
+        const row = document.createElement('div');
+        row.className = 'rename-row';
+        row.innerHTML = `
+            <select class="rename-select rename-from">
+                <option value="">Select column</option>
+                ${columns.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
+            </select>
+            <span class="rename-arrow">→</span>
+            <input type="text" class="rename-input rename-to" placeholder="New name">
+            <button type="button" class="rename-remove">✕</button>
+        `;
+        
+        // Update merge config when rename changes
+        row.querySelector('.rename-from').addEventListener('change', () => updateMergeConfig());
+        row.querySelector('.rename-to').addEventListener('input', debounce(() => updateMergeConfig(), 300));
+        row.querySelector('.rename-remove').addEventListener('click', () => {
+            row.remove();
+            updateMergeConfig();
+        });
+        
+        container.appendChild(row);
+    }
+    
+    // Debounce helper for input events
+    function debounce(func, wait) {
+        let timeout;
+        return function(...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
+    
+    function getRenames(container) {
+        const renames = {};
+        container.querySelectorAll('.rename-row').forEach(row => {
+            const from = row.querySelector('.rename-from').value;
+            const to = row.querySelector('.rename-to').value.trim();
+            if (from && to && from !== to) {
+                renames[from] = to;
+            }
+        });
+        return renames;
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = text;
+        return div.innerHTML;
+    }
+    
+    // Add first child file upload by default
+    addChildFileUpload();
+});
+</script>
+{% endblock %}
