@@ -771,40 +771,24 @@ def perform_merge(request):
         main_file_id = data.get("main_file_id")
         main_columns = data.get("main_columns", [])
         child_files = data.get("child_files", [])  # List of {file_id, columns}
-        
-        # Priority merge options
-        use_priority_merge = data.get("priority_merge", False)
-        primary_column = data.get("primary_column")
-        fallback_column = data.get("fallback_column")
-        
         # Support both single column (legacy) and multiple columns
         merge_columns = data.get("merge_columns", [])
-        if not merge_columns and not use_priority_merge:
+        if not merge_columns:
             # Fallback to single merge_column for backwards compatibility
             single_col = data.get("merge_column")
             if single_col:
                 merge_columns = [single_col]
-        
         merge_type = data.get("merge_type", "left")  # left, right, outer, inner
-        remove_na = data.get("remove_na", False)  # Remove NA rows from child files
-        drop_duplicates = data.get(
-            "drop_duplicates", False
-        )  # Drop duplicate rows from child files
+        fallback_column = data.get(
+            "fallback_column"
+        )  # Optional fallback column from main file
 
         if not main_file_id:
             return JsonResponse(
                 {"success": False, "error": "Main file is required"}, status=400
             )
 
-        if use_priority_merge:
-            if not primary_column or not fallback_column:
-                return JsonResponse(
-                    {"success": False, "error": "Both primary and fallback columns are required for priority merge"},
-                    status=400,
-                )
-            # For priority merge, we'll use both columns in the process
-            merge_columns = [primary_column]  # Start with primary for column selection
-        elif not merge_columns:
+        if not merge_columns:
             return JsonResponse(
                 {"success": False, "error": "At least one merge column is required"},
                 status=400,
@@ -820,15 +804,12 @@ def perform_merge(request):
         else:
             main_df = pd.read_excel(main_path)
 
-        # Determine all columns needed for merging
-        if use_priority_merge:
-            all_merge_cols = [primary_column, fallback_column]
-        else:
-            all_merge_cols = merge_columns
-        
-        # Select only specified columns from main file (always include merge columns)
+        # Select only specified columns from main file (always include merge columns and fallback)
         if main_columns:
-            columns_to_keep = list(set(main_columns + all_merge_cols))
+            columns_to_keep = list(set(main_columns + merge_columns))
+            if fallback_column:
+                columns_to_keep.append(fallback_column)
+            columns_to_keep = list(set(columns_to_keep))
             columns_to_keep = [c for c in columns_to_keep if c in main_df.columns]
             main_df = main_df[columns_to_keep]
 
@@ -836,12 +817,11 @@ def perform_merge(request):
         main_renames = data.get("main_renames", {})
         if main_renames:
             main_df = main_df.rename(columns=main_renames)
-            # Update merge columns if any were renamed
-            if use_priority_merge:
-                primary_column = main_renames.get(primary_column, primary_column)
+            # Update merge_columns if any were renamed
+            merge_columns = [main_renames.get(c, c) for c in merge_columns]
+            # Update fallback_column if renamed
+            if fallback_column:
                 fallback_column = main_renames.get(fallback_column, fallback_column)
-            else:
-                merge_columns = [main_renames.get(c, c) for c in merge_columns]
 
         result_df = main_df.copy()
 
@@ -864,9 +844,8 @@ def perform_merge(request):
                 child_df = pd.read_excel(child_path)
 
             # Select only specified columns (always include merge columns)
-            cols_for_merge = all_merge_cols if use_priority_merge else merge_columns
             if child_columns:
-                columns_to_keep = list(set(child_columns + cols_for_merge))
+                columns_to_keep = list(set(child_columns + merge_columns))
                 columns_to_keep = [c for c in columns_to_keep if c in child_df.columns]
                 child_df = child_df[columns_to_keep]
 
@@ -875,40 +854,22 @@ def perform_merge(request):
             if child_renames:
                 child_df = child_df.rename(columns=child_renames)
 
-            # Remove rows with NA values if option is enabled
-            if remove_na:
-                child_df = child_df.dropna()
-
-            # Remove duplicate rows based on merge columns if option is enabled
-            if drop_duplicates:
-                # Get renamed merge columns for this child
-                renamed_merge_cols = [child_renames.get(c, c) for c in cols_for_merge]
-                available_merge_cols = [
-                    c for c in renamed_merge_cols if c in child_df.columns
-                ]
-                if available_merge_cols:
-                    child_df = child_df.drop_duplicates(
-                        subset=available_merge_cols, keep="first"
-                    )
+            # Remove rows where merge column has NA (prevents duplicate/wrong matches)
+            for merge_col in merge_columns:
+                if merge_col in child_df.columns:
+                    child_df = child_df[child_df[merge_col].notna()]
 
             child_dfs.append(child_df)
 
         # Merge all child DataFrames first (if multiple)
-        if use_priority_merge:
-            # For priority merge, use primary column first
-            child_merge_col = primary_column
-        else:
-            child_merge_col = merge_columns
-        
         if len(child_dfs) > 1:
             merged_children = child_dfs[0]
             for i, cdf in enumerate(child_dfs[1:], start=1):
                 # Handle duplicate columns by adding suffix
-                merge_on = child_merge_col if isinstance(child_merge_col, list) else [child_merge_col]
                 merged_children = pd.merge(
                     merged_children,
                     cdf,
-                    on=merge_on,
+                    on=merge_columns,
                     how="outer",
                     suffixes=("", f"_child{i + 1}"),
                 )
@@ -919,61 +880,138 @@ def perform_merge(request):
 
         # Merge with main file
         if merged_children is not None:
-            if use_priority_merge:
-                # Priority merge: First try primary column, then fallback
-                # Step 1: Merge on primary column
-                primary_merge = pd.merge(
-                    result_df,
-                    merged_children,
-                    on=primary_column,
-                    how="left",
-                    suffixes=("", "_child"),
-                    indicator=True
-                )
-                
-                # Get child columns (excluding merge columns)
-                child_data_cols = [c for c in merged_children.columns if c not in [primary_column, fallback_column]]
-                
-                # Step 2: Find rows that didn't match on primary
-                unmatched_mask = primary_merge['_merge'] == 'left_only'
-                
-                if unmatched_mask.any() and fallback_column in result_df.columns and fallback_column in merged_children.columns:
-                    # Get unmatched rows from main
-                    unmatched_main = result_df[result_df[primary_column].isin(primary_merge.loc[unmatched_mask, primary_column])]
-                    
-                    # Try to merge unmatched rows on fallback column
-                    fallback_merge = pd.merge(
-                        unmatched_main,
-                        merged_children,
-                        on=fallback_column,
-                        how="left",
-                        suffixes=("", "_fallback")
+            merge_col = merge_columns[0]  # Primary merge column
+
+            if fallback_column and fallback_column in result_df.columns:
+                # Merge with fallback logic:
+                # - If merge_col has value: try to match on merge_col
+                # - If merge_col is NA but fallback has value: try to match on fallback
+                # - If both are NA: keep row as-is (no merge) - unless inner join
+
+                # Get child data columns (columns from merged_children except merge columns)
+                child_data_cols = [
+                    c for c in merged_children.columns if c not in merge_columns
+                ]
+
+                # Initialize result with main data
+                result_df = result_df.copy()
+
+                # Add empty columns for child data
+                for col in child_data_cols:
+                    result_df[col] = None
+
+                # Create lookup dict from merged_children (merge_col -> row data)
+                child_lookup = {}
+                for _, row in merged_children.iterrows():
+                    key = row[merge_col]
+                    if pd.notna(key):
+                        child_lookup[key] = row[child_data_cols].to_dict()
+
+                # Track which rows matched (for inner join)
+                matched_indices = []
+
+                # Process each row in main file
+                for idx in result_df.index:
+                    main_merge_val = result_df.loc[idx, merge_col]
+                    main_fallback_val = (
+                        result_df.loc[idx, fallback_column]
+                        if fallback_column in result_df.columns
+                        else None
                     )
-                    
-                    # Update the primary merge result with fallback matches
-                    # For each child column, fill NA values with fallback values
-                    for col in child_data_cols:
-                        child_col = col if col in primary_merge.columns else f"{col}_child"
-                        fallback_col = col if col in fallback_merge.columns else f"{col}_fallback"
-                        
-                        if child_col in primary_merge.columns and fallback_col in fallback_merge.columns:
-                            # Create a mapping from main index to fallback values
-                            fallback_values = fallback_merge.set_index(unmatched_main.index)[fallback_col]
-                            primary_merge.loc[unmatched_mask, child_col] = primary_merge.loc[unmatched_mask, child_col].fillna(
-                                fallback_values.reindex(primary_merge.loc[unmatched_mask].index)
+
+                    matched_data = None
+
+                    # Step 1: Try primary merge column (only if not NA)
+                    if pd.notna(main_merge_val) and main_merge_val in child_lookup:
+                        matched_data = child_lookup[main_merge_val]
+
+                    # Step 2: If no match and merge_col is NA or no match, try fallback (only if fallback is not NA)
+                    elif (
+                        pd.notna(main_fallback_val)
+                        and main_fallback_val in child_lookup
+                    ):
+                        matched_data = child_lookup[main_fallback_val]
+
+                    # Apply matched data if found
+                    if matched_data:
+                        matched_indices.append(idx)
+                        for col, val in matched_data.items():
+                            result_df.loc[idx, col] = val
+
+                # Apply join type filter
+                if merge_type == "inner":
+                    # Inner join: only keep rows that matched
+                    result_df = result_df.loc[matched_indices]
+                elif merge_type == "right":
+                    # Right join: keep all child rows + matched main rows
+                    # Get child keys that were matched
+                    matched_child_keys = set()
+                    for idx in matched_indices:
+                        main_val = result_df.loc[idx, merge_col]
+                        fallback_val = (
+                            result_df.loc[idx, fallback_column]
+                            if fallback_column in result_df.columns
+                            else None
+                        )
+                        if pd.notna(main_val) and main_val in child_lookup:
+                            matched_child_keys.add(main_val)
+                        elif pd.notna(fallback_val) and fallback_val in child_lookup:
+                            matched_child_keys.add(fallback_val)
+
+                    # Keep matched main rows
+                    result_df = result_df.loc[matched_indices]
+
+                    # Add unmatched child rows
+                    for key in child_lookup:
+                        if key not in matched_child_keys:
+                            new_row = {col: None for col in result_df.columns}
+                            new_row[merge_col] = key
+                            new_row.update(child_lookup[key])
+                            result_df = pd.concat(
+                                [result_df, pd.DataFrame([new_row])], ignore_index=True
                             )
-                
-                # Remove the merge indicator column
-                result_df = primary_merge.drop(columns=['_merge'])
+                # For "left" and "outer" with fallback, all main rows are kept (current behavior)
+
             else:
-                # Regular merge
-                result_df = pd.merge(
-                    result_df,
-                    merged_children,
-                    on=merge_columns,
-                    how=merge_type,
-                    suffixes=("_main", "_child"),
-                )
+                # Regular merge without fallback
+                # But still avoid merging on NA values in main file
+                main_with_value = result_df[result_df[merge_col].notna()]
+                main_with_na = result_df[result_df[merge_col].isna()]
+
+                # Merge only rows that have valid merge column values
+                if len(main_with_value) > 0:
+                    merged_part = pd.merge(
+                        main_with_value,
+                        merged_children,
+                        on=merge_columns,
+                        how=merge_type,
+                        suffixes=("_main", "_child"),
+                    )
+                else:
+                    merged_part = main_with_value.copy()
+                    for col in merged_children.columns:
+                        if col not in merge_columns and col not in merged_part.columns:
+                            merged_part[col] = None
+
+                # Add NA rows back only for left/outer joins (not inner/right)
+                if merge_type in ["left", "outer"] and len(main_with_na) > 0:
+                    # Add missing columns to NA rows
+                    for col in merged_children.columns:
+                        if col not in merge_columns and col not in main_with_na.columns:
+                            main_with_na = main_with_na.copy()
+                            main_with_na[col] = None
+
+                    # Ensure columns match
+                    for col in merged_part.columns:
+                        if col not in main_with_na.columns:
+                            main_with_na[col] = None
+
+                    main_with_na = main_with_na[merged_part.columns]
+                    result_df = pd.concat(
+                        [merged_part, main_with_na], ignore_index=True
+                    )
+                else:
+                    result_df = merged_part
 
         # Clean the result
         result_df = result_df.fillna("")

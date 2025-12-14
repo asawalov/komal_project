@@ -124,38 +124,25 @@
         </div>
     </div>
     
-    <div class="config-options">
+    <!-- Fallback Column Option -->
+    <div class="fallback-option">
         <label class="checkbox-label">
-            <input type="checkbox" id="remove-na-checkbox">
-            <span class="checkmark"></span>
-            Remove rows with NA/empty values in child files before merging
+            <input type="checkbox" id="use-fallback-checkbox">
+            <span>Add fallback column (if merge column doesn't match, try fallback from main file)</span>
         </label>
-        <label class="checkbox-label">
-            <input type="checkbox" id="drop-duplicates-checkbox">
-            <span class="checkmark"></span>
-            Remove duplicate rows from child files (based on merge columns)
-        </label>
-        <label class="checkbox-label">
-            <input type="checkbox" id="priority-merge-checkbox">
-            <span class="checkmark"></span>
-            Enable priority merge (if primary column doesn't match, try fallback column)
-        </label>
-    </div>
-    
-    <!-- Priority Merge Section -->
-    <div class="priority-merge-section hidden" id="priority-merge-section">
-        <div class="priority-merge-info">
-            <span class="info-icon">ℹ️</span>
-            <span>Priority merge: First tries to match on primary column. If no match found, uses fallback column.</span>
-        </div>
-        <div class="priority-merge-grid">
-            <div class="priority-item">
-                <label class="section-label">Primary Merge Column:</label>
-                <div class="multiselect-container" id="primary-merge-column"></div>
+        
+        <div class="fallback-config hidden" id="fallback-config">
+            <div class="fallback-info">
+                <span class="info-icon">ℹ️</span>
+                <span>If no match found on merge column, will try to match child's merge column with main file's fallback column</span>
             </div>
-            <div class="priority-item">
-                <label class="section-label">Fallback Merge Column:</label>
-                <div class="multiselect-container" id="fallback-merge-column"></div>
+            <div class="fallback-select-wrapper">
+                <label class="section-label">Fallback column (from main file only):</label>
+                <div class="fallback-autocomplete-container">
+                    <input type="text" id="fallback-column-input" class="fallback-autocomplete" placeholder="Type to search column..." autocomplete="off">
+                    <input type="hidden" id="fallback-column-value">
+                    <div class="fallback-autocomplete-dropdown" id="fallback-dropdown"></div>
+                </div>
             </div>
         </div>
     </div>
@@ -837,6 +824,66 @@
         color: var(--error);
     }
     
+    /* Rename Autocomplete */
+    .rename-autocomplete-container {
+        position: relative;
+        flex: 1;
+        min-width: 0;
+    }
+    
+    .rename-autocomplete {
+        width: 100%;
+        padding: 0.35rem 0.5rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 5px;
+        color: var(--text-primary);
+        font-size: 0.75rem;
+    }
+    
+    .rename-autocomplete:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .rename-autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--bg-secondary);
+        border: 1px solid var(--accent-primary);
+        border-radius: 5px;
+        max-height: 150px;
+        overflow-y: auto;
+        z-index: 1100;
+        display: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    }
+    
+    .rename-autocomplete-dropdown.open {
+        display: block;
+    }
+    
+    .rename-autocomplete-item {
+        padding: 0.4rem 0.5rem;
+        cursor: pointer;
+        font-size: 0.75rem;
+        color: var(--text-primary);
+    }
+    
+    .rename-autocomplete-item:hover {
+        background: rgba(99, 102, 241, 0.2);
+    }
+    
+    .rename-autocomplete-empty {
+        padding: 0.5rem;
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        text-align: center;
+        font-style: italic;
+    }
+    
     .add-rename-btn {
         font-size: 0.7rem;
         padding: 0.25rem 0.5rem;
@@ -882,21 +929,18 @@
         border-color: var(--accent-primary);
     }
     
-    /* Config options checkboxes */
-    .config-options {
+    /* Fallback Option */
+    .fallback-option {
         margin-top: 1rem;
         padding-top: 1rem;
         border-top: 1px solid var(--border-color);
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
     }
     
     .checkbox-label {
         display: flex;
         align-items: center;
         gap: 0.5rem;
-        font-size: 0.85rem;
+        font-size: 0.9rem;
         color: var(--text-secondary);
         cursor: pointer;
     }
@@ -912,8 +956,7 @@
         color: var(--text-primary);
     }
     
-    /* Priority Merge Section */
-    .priority-merge-section {
+    .fallback-config {
         margin-top: 1rem;
         padding: 1rem;
         background: rgba(99, 102, 241, 0.1);
@@ -921,9 +964,9 @@
         border-radius: 8px;
     }
     
-    .priority-merge-info {
+    .fallback-info {
         display: flex;
-        align-items: center;
+        align-items: flex-start;
         gap: 0.5rem;
         font-size: 0.85rem;
         color: var(--accent-primary);
@@ -932,22 +975,77 @@
     
     .info-icon {
         font-size: 1rem;
+        flex-shrink: 0;
     }
     
-    .priority-merge-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 1rem;
-    }
-    
-    .priority-item {
+    .fallback-select-wrapper {
         display: flex;
         flex-direction: column;
         gap: 0.5rem;
     }
     
-    .priority-item .multiselect-container {
-        z-index: 1002;
+    .fallback-select {
+        max-width: 300px;
+    }
+    
+    /* Fallback Autocomplete */
+    .fallback-autocomplete-container {
+        position: relative;
+        max-width: 300px;
+    }
+    
+    .fallback-autocomplete {
+        width: 100%;
+        padding: 0.6rem 0.8rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+    }
+    
+    .fallback-autocomplete:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .fallback-autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        background: var(--bg-secondary);
+        border: 1px solid var(--accent-primary);
+        border-radius: 6px;
+        max-height: 200px;
+        overflow-y: auto;
+        z-index: 1100;
+        display: none;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        margin-top: 2px;
+    }
+    
+    .fallback-autocomplete-dropdown.open {
+        display: block;
+    }
+    
+    .fallback-autocomplete-item {
+        padding: 0.5rem 0.8rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+        color: var(--text-primary);
+    }
+    
+    .fallback-autocomplete-item:hover {
+        background: rgba(99, 102, 241, 0.2);
+    }
+    
+    .fallback-autocomplete-empty {
+        padding: 0.5rem 0.8rem;
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        text-align: center;
+        font-style: italic;
     }
     
     .merge-column-multiselect {
@@ -1064,12 +1162,14 @@ document.addEventListener('DOMContentLoaded', function() {
     const mergeTypeSelect = document.getElementById('merge-type-select');
     const mergeBtn = document.getElementById('merge-btn');
     let mergeColumnMultiselect = null;
-    let primaryMergeColumnSelect = null;
-    let fallbackMergeColumnSelect = null;
     
-    // Priority merge elements
-    const priorityMergeCheckbox = document.getElementById('priority-merge-checkbox');
-    const priorityMergeSection = document.getElementById('priority-merge-section');
+    // Fallback column elements
+    const useFallbackCheckbox = document.getElementById('use-fallback-checkbox');
+    const fallbackConfig = document.getElementById('fallback-config');
+    const fallbackColumnInput = document.getElementById('fallback-column-input');
+    const fallbackColumnValue = document.getElementById('fallback-column-value');
+    const fallbackDropdown = document.getElementById('fallback-dropdown');
+    let fallbackOptions = [];
     
     // Loading & Results
     const loadingCard = document.getElementById('loading-card');
@@ -1452,7 +1552,10 @@ document.addEventListener('DOMContentLoaded', function() {
             // Show rename section and wire up button
             mainRenameSection.classList.remove('hidden');
             mainRenameList.innerHTML = '';
-            mainAddRenameBtn.onclick = () => addRenameRow(mainRenameList, result.columns);
+            mainAddRenameBtn.onclick = () => addRenameRow(mainRenameList, result.columns, () => {
+                // Return only selected columns from main multiselect
+                return mainMultiselectInstance ? mainMultiselectInstance.getSelectedValues() : result.columns;
+            });
             
             updateMergeConfig();
             
@@ -1486,43 +1589,91 @@ document.addEventListener('DOMContentLoaded', function() {
     
     addChildBtn.addEventListener('click', addChildFileUpload);
     
-    // Priority merge toggle
-    priorityMergeCheckbox.addEventListener('change', function() {
+    // Fallback checkbox toggle
+    useFallbackCheckbox.addEventListener('change', function() {
         if (this.checked) {
-            priorityMergeSection.classList.remove('hidden');
-            // Hide the regular merge column selector
-            document.getElementById('merge-column-multiselect').parentElement.classList.add('hidden');
-            // Initialize priority merge selectors
-            initPriorityMergeSelectors();
+            fallbackConfig.classList.remove('hidden');
+            updateFallbackColumnOptions();
         } else {
-            priorityMergeSection.classList.add('hidden');
-            // Show the regular merge column selector
-            document.getElementById('merge-column-multiselect').parentElement.classList.remove('hidden');
+            fallbackConfig.classList.add('hidden');
+            fallbackColumnInput.value = '';
+            fallbackColumnValue.value = '';
         }
-        updateMergeBtn();
     });
     
-    function initPriorityMergeSelectors() {
-        const commonColumns = getCommonColumns();
+    // Update fallback column options when main file changes
+    function updateFallbackColumnOptions() {
+        if (!mainFile) {
+            fallbackOptions = [];
+            return;
+        }
         
-        // Initialize primary column selector (single select)
-        const primaryContainer = document.getElementById('primary-merge-column');
-        primaryContainer.innerHTML = '';
-        primaryMergeColumnSelect = createMultiselect(primaryContainer, commonColumns, [], {
-            placeholder: 'Select primary column...',
-            maxSelections: 1,
-            onChange: updateMergeBtn
-        });
+        // Get main file columns (with renames applied)
+        const mainColumnsRenamed = getColumnsWithRenames(mainFile.columns, mainRenameList);
         
-        // Initialize fallback column selector (single select)
-        const fallbackContainer = document.getElementById('fallback-merge-column');
-        fallbackContainer.innerHTML = '';
-        fallbackMergeColumnSelect = createMultiselect(fallbackContainer, commonColumns, [], {
-            placeholder: 'Select fallback column...',
-            maxSelections: 1,
-            onChange: updateMergeBtn
+        // Get current merge columns to exclude them from fallback options
+        const mergeColumns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
+        
+        // Filter out merge columns from fallback options
+        fallbackOptions = mainColumnsRenamed.filter(col => !mergeColumns.includes(col));
+        
+        // If current value is no longer valid, clear it
+        if (fallbackColumnValue.value && !fallbackOptions.includes(fallbackColumnValue.value)) {
+            fallbackColumnInput.value = '';
+            fallbackColumnValue.value = '';
+        }
+    }
+    
+    // Fallback column autocomplete
+    function renderFallbackDropdown(filter = '') {
+        const filtered = fallbackOptions.filter(c => 
+            c.toLowerCase().includes(filter.toLowerCase())
+        );
+        
+        if (filtered.length === 0) {
+            fallbackDropdown.innerHTML = '<div class="fallback-autocomplete-empty">No columns available</div>';
+            fallbackDropdown.classList.add('open');
+            return;
+        }
+        
+        fallbackDropdown.innerHTML = filtered.map(c => 
+            `<div class="fallback-autocomplete-item" data-value="${escapeHtml(c)}">${escapeHtml(c)}</div>`
+        ).join('');
+        fallbackDropdown.classList.add('open');
+        
+        // Add click handlers
+        fallbackDropdown.querySelectorAll('.fallback-autocomplete-item').forEach(item => {
+            item.addEventListener('click', () => {
+                const value = item.dataset.value;
+                fallbackColumnInput.value = value;
+                fallbackColumnValue.value = value;
+                fallbackDropdown.classList.remove('open');
+            });
         });
     }
+    
+    fallbackColumnInput.addEventListener('input', () => {
+        fallbackColumnValue.value = '';
+        renderFallbackDropdown(fallbackColumnInput.value);
+    });
+    
+    fallbackColumnInput.addEventListener('focus', () => {
+        renderFallbackDropdown(fallbackColumnInput.value);
+    });
+    
+    fallbackColumnInput.addEventListener('blur', () => {
+        setTimeout(() => {
+            fallbackDropdown.classList.remove('open');
+            if (!fallbackColumnValue.value && fallbackColumnInput.value) {
+                const exactMatch = fallbackOptions.find(c => c === fallbackColumnInput.value);
+                if (exactMatch) {
+                    fallbackColumnValue.value = exactMatch;
+                } else {
+                    fallbackColumnInput.value = '';
+                }
+            }
+        }, 200);
+    });
     
     function addChildFileUpload() {
         childFileCounter++;
@@ -1657,7 +1808,13 @@ document.addEventListener('DOMContentLoaded', function() {
             const renameList = childItem.querySelector('.child-rename-list');
             const addRenameBtn = childItem.querySelector('.child-add-rename');
             renameList.innerHTML = '';
-            addRenameBtn.onclick = () => addRenameRow(renameList, result.columns);
+            addRenameBtn.onclick = () => addRenameRow(renameList, result.columns, () => {
+                // Return only selected columns from this child's multiselect
+                const childIndex = childFiles.findIndex(c => c.id === childId);
+                return (childIndex !== -1 && childFiles[childIndex].multiselect) 
+                    ? childFiles[childIndex].multiselect.getSelectedValues() 
+                    : result.columns;
+            });
             
             updateMergeConfig();
             updateChildCount();
@@ -1805,32 +1962,33 @@ document.addEventListener('DOMContentLoaded', function() {
             }
             
             updateMergeButton();
+            
+            // Update fallback column options if enabled
+            if (useFallbackCheckbox.checked) {
+                updateFallbackColumnOptions();
+            }
         } else {
             mergeConfigCard.classList.add('hidden');
             mergeColumnMultiselect = null;
             mergeColumnMultiselectContainer.innerHTML = '';
+            // Reset fallback
+            useFallbackCheckbox.checked = false;
+            fallbackConfig.classList.add('hidden');
         }
     }
     
     function updateMergeButton() {
         const hasMain = mainFile !== null;
         const hasChildren = childFiles.some(c => c.data !== null);
-        
-        let hasMergeColumn;
-        if (priorityMergeCheckbox.checked) {
-            // For priority merge, need both primary and fallback columns
-            const hasPrimary = primaryMergeColumnSelect && primaryMergeColumnSelect.getSelectedValues().length > 0;
-            const hasFallback = fallbackMergeColumnSelect && fallbackMergeColumnSelect.getSelectedValues().length > 0;
-            hasMergeColumn = hasPrimary && hasFallback;
-        } else {
-            hasMergeColumn = mergeColumnMultiselect && mergeColumnMultiselect.getSelectedValues().length > 0;
-        }
+        const hasMergeColumn = mergeColumnMultiselect && mergeColumnMultiselect.getSelectedValues().length > 0;
         
         mergeBtn.disabled = !(hasMain && hasChildren && hasMergeColumn);
+        
+        // Also update fallback options when merge column changes
+        if (useFallbackCheckbox.checked) {
+            updateFallbackColumnOptions();
+        }
     }
-    
-    // Alias for updateMergeButton (used by priority merge callbacks)
-    const updateMergeBtn = updateMergeButton;
     
     // ============================================
     // Merge Operation
@@ -1860,29 +2018,21 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             
-            const removeNa = document.getElementById('remove-na-checkbox').checked;
-            const dropDuplicates = document.getElementById('drop-duplicates-checkbox').checked;
-            const usePriorityMerge = priorityMergeCheckbox.checked;
+            const mergeColumns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
             
-            // Build merge request body
+            // Build request body
             const requestBody = {
                 main_file_id: mainFile.file_id,
                 main_columns: mainColumns,
                 main_renames: mainRenames,
                 child_files: childFilesData,
-                merge_type: mergeTypeSelect.value,
-                remove_na: removeNa,
-                drop_duplicates: dropDuplicates
+                merge_columns: mergeColumns,
+                merge_type: mergeTypeSelect.value
             };
             
-            if (usePriorityMerge) {
-                // Priority merge - primary and fallback columns
-                requestBody.priority_merge = true;
-                requestBody.primary_column = primaryMergeColumnSelect.getSelectedValues()[0];
-                requestBody.fallback_column = fallbackMergeColumnSelect.getSelectedValues()[0];
-            } else {
-                // Regular merge - merge columns
-                requestBody.merge_columns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
+            // Add fallback column if enabled
+            if (useFallbackCheckbox.checked && fallbackColumnValue.value) {
+                requestBody.fallback_column = fallbackColumnValue.value;
             }
             
             const response = await fetch('/merge/perform/', {
@@ -1967,21 +2117,98 @@ document.addEventListener('DOMContentLoaded', function() {
     // Rename Functions
     // ============================================
     
-    function addRenameRow(container, columns) {
+    function addRenameRow(container, columns, getSelectedColumns) {
+        // Get only selected columns for rename options
+        const selectedColumns = getSelectedColumns ? getSelectedColumns() : columns;
+        
+        // Get already renamed columns to exclude them
+        const alreadyRenamed = [];
+        container.querySelectorAll('.rename-from').forEach(select => {
+            if (select.value) alreadyRenamed.push(select.value);
+        });
+        
+        // Filter out already renamed columns
+        const availableColumns = selectedColumns.filter(c => !alreadyRenamed.includes(c));
+        
+        if (availableColumns.length === 0) {
+            alert('All selected columns have been renamed or no columns selected');
+            return;
+        }
+        
         const row = document.createElement('div');
         row.className = 'rename-row';
         row.innerHTML = `
-            <select class="rename-select rename-from">
-                <option value="">Select column</option>
-                ${columns.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('')}
-            </select>
+            <div class="rename-autocomplete-container">
+                <input type="text" class="rename-autocomplete rename-from-input" placeholder="Type to search column..." autocomplete="off">
+                <input type="hidden" class="rename-from-value">
+                <div class="rename-autocomplete-dropdown"></div>
+            </div>
             <span class="rename-arrow">→</span>
             <input type="text" class="rename-input rename-to" placeholder="New name">
             <button type="button" class="rename-remove">✕</button>
         `;
         
+        const input = row.querySelector('.rename-from-input');
+        const hiddenInput = row.querySelector('.rename-from-value');
+        const dropdown = row.querySelector('.rename-autocomplete-dropdown');
+        
+        // Autocomplete logic
+        function renderDropdown(filter = '') {
+            const filtered = availableColumns.filter(c => 
+                c.toLowerCase().includes(filter.toLowerCase())
+            );
+            
+            if (filtered.length === 0) {
+                dropdown.classList.remove('open');
+                dropdown.innerHTML = '<div class="rename-autocomplete-empty">No columns available</div>';
+                dropdown.classList.add('open');
+                return;
+            }
+            
+            dropdown.innerHTML = filtered.map(c => 
+                `<div class="rename-autocomplete-item" data-value="${escapeHtml(c)}">${escapeHtml(c)}</div>`
+            ).join('');
+            dropdown.classList.add('open');
+            
+            // Add click handlers
+            dropdown.querySelectorAll('.rename-autocomplete-item').forEach(item => {
+                item.addEventListener('click', () => {
+                    const value = item.dataset.value;
+                    input.value = value;
+                    hiddenInput.value = value;
+                    dropdown.classList.remove('open');
+                    updateMergeConfig();
+                });
+            });
+        }
+        
+        input.addEventListener('input', () => {
+            hiddenInput.value = ''; // Clear hidden value until selection
+            renderDropdown(input.value);
+        });
+        
+        input.addEventListener('focus', () => {
+            // Show all available columns on focus
+            renderDropdown(input.value);
+        });
+        
+        input.addEventListener('blur', () => {
+            // Delay to allow click on dropdown item
+            setTimeout(() => {
+                dropdown.classList.remove('open');
+                // If no valid selection, clear input
+                if (!hiddenInput.value && input.value) {
+                    const exactMatch = availableColumns.find(c => c === input.value);
+                    if (exactMatch) {
+                        hiddenInput.value = exactMatch;
+                    } else {
+                        input.value = '';
+                    }
+                }
+            }, 200);
+        });
+        
         // Update merge config when rename changes
-        row.querySelector('.rename-from').addEventListener('change', () => updateMergeConfig());
         row.querySelector('.rename-to').addEventListener('input', debounce(() => updateMergeConfig(), 300));
         row.querySelector('.rename-remove').addEventListener('click', () => {
             row.remove();
@@ -1989,6 +2216,7 @@ document.addEventListener('DOMContentLoaded', function() {
         });
         
         container.appendChild(row);
+        input.focus();
     }
     
     // Debounce helper for input events
@@ -2003,7 +2231,10 @@ document.addEventListener('DOMContentLoaded', function() {
     function getRenames(container) {
         const renames = {};
         container.querySelectorAll('.rename-row').forEach(row => {
-            const from = row.querySelector('.rename-from').value;
+            // Support both old select and new autocomplete
+            const fromSelect = row.querySelector('.rename-from');
+            const fromHidden = row.querySelector('.rename-from-value');
+            const from = fromHidden ? fromHidden.value : (fromSelect ? fromSelect.value : '');
             const to = row.querySelector('.rename-to').value.trim();
             if (from && to && from !== to) {
                 renames[from] = to;
