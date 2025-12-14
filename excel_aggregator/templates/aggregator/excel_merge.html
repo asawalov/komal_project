@@ -135,6 +135,29 @@
             <span class="checkmark"></span>
             Remove duplicate rows from child files (based on merge columns)
         </label>
+        <label class="checkbox-label">
+            <input type="checkbox" id="priority-merge-checkbox">
+            <span class="checkmark"></span>
+            Enable priority merge (if primary column doesn't match, try fallback column)
+        </label>
+    </div>
+    
+    <!-- Priority Merge Section -->
+    <div class="priority-merge-section hidden" id="priority-merge-section">
+        <div class="priority-merge-info">
+            <span class="info-icon">ℹ️</span>
+            <span>Priority merge: First tries to match on primary column. If no match found, uses fallback column.</span>
+        </div>
+        <div class="priority-merge-grid">
+            <div class="priority-item">
+                <label class="section-label">Primary Merge Column:</label>
+                <div class="multiselect-container" id="primary-merge-column"></div>
+            </div>
+            <div class="priority-item">
+                <label class="section-label">Fallback Merge Column:</label>
+                <div class="multiselect-container" id="fallback-merge-column"></div>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -889,6 +912,44 @@
         color: var(--text-primary);
     }
     
+    /* Priority Merge Section */
+    .priority-merge-section {
+        margin-top: 1rem;
+        padding: 1rem;
+        background: rgba(99, 102, 241, 0.1);
+        border: 1px solid rgba(99, 102, 241, 0.3);
+        border-radius: 8px;
+    }
+    
+    .priority-merge-info {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-size: 0.85rem;
+        color: var(--accent-primary);
+        margin-bottom: 1rem;
+    }
+    
+    .info-icon {
+        font-size: 1rem;
+    }
+    
+    .priority-merge-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1rem;
+    }
+    
+    .priority-item {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .priority-item .multiselect-container {
+        z-index: 1002;
+    }
+    
     .merge-column-multiselect {
         max-width: 500px;
     }
@@ -1003,6 +1064,12 @@ document.addEventListener('DOMContentLoaded', function() {
     const mergeTypeSelect = document.getElementById('merge-type-select');
     const mergeBtn = document.getElementById('merge-btn');
     let mergeColumnMultiselect = null;
+    let primaryMergeColumnSelect = null;
+    let fallbackMergeColumnSelect = null;
+    
+    // Priority merge elements
+    const priorityMergeCheckbox = document.getElementById('priority-merge-checkbox');
+    const priorityMergeSection = document.getElementById('priority-merge-section');
     
     // Loading & Results
     const loadingCard = document.getElementById('loading-card');
@@ -1419,6 +1486,44 @@ document.addEventListener('DOMContentLoaded', function() {
     
     addChildBtn.addEventListener('click', addChildFileUpload);
     
+    // Priority merge toggle
+    priorityMergeCheckbox.addEventListener('change', function() {
+        if (this.checked) {
+            priorityMergeSection.classList.remove('hidden');
+            // Hide the regular merge column selector
+            document.getElementById('merge-column-multiselect').parentElement.classList.add('hidden');
+            // Initialize priority merge selectors
+            initPriorityMergeSelectors();
+        } else {
+            priorityMergeSection.classList.add('hidden');
+            // Show the regular merge column selector
+            document.getElementById('merge-column-multiselect').parentElement.classList.remove('hidden');
+        }
+        updateMergeBtn();
+    });
+    
+    function initPriorityMergeSelectors() {
+        const commonColumns = getCommonColumns();
+        
+        // Initialize primary column selector (single select)
+        const primaryContainer = document.getElementById('primary-merge-column');
+        primaryContainer.innerHTML = '';
+        primaryMergeColumnSelect = createMultiselect(primaryContainer, commonColumns, [], {
+            placeholder: 'Select primary column...',
+            maxSelections: 1,
+            onChange: updateMergeBtn
+        });
+        
+        // Initialize fallback column selector (single select)
+        const fallbackContainer = document.getElementById('fallback-merge-column');
+        fallbackContainer.innerHTML = '';
+        fallbackMergeColumnSelect = createMultiselect(fallbackContainer, commonColumns, [], {
+            placeholder: 'Select fallback column...',
+            maxSelections: 1,
+            onChange: updateMergeBtn
+        });
+    }
+    
     function addChildFileUpload() {
         childFileCounter++;
         const childId = childFileCounter;
@@ -1710,10 +1815,22 @@ document.addEventListener('DOMContentLoaded', function() {
     function updateMergeButton() {
         const hasMain = mainFile !== null;
         const hasChildren = childFiles.some(c => c.data !== null);
-        const hasMergeColumn = mergeColumnMultiselect && mergeColumnMultiselect.getSelectedValues().length > 0;
+        
+        let hasMergeColumn;
+        if (priorityMergeCheckbox.checked) {
+            // For priority merge, need both primary and fallback columns
+            const hasPrimary = primaryMergeColumnSelect && primaryMergeColumnSelect.getSelectedValues().length > 0;
+            const hasFallback = fallbackMergeColumnSelect && fallbackMergeColumnSelect.getSelectedValues().length > 0;
+            hasMergeColumn = hasPrimary && hasFallback;
+        } else {
+            hasMergeColumn = mergeColumnMultiselect && mergeColumnMultiselect.getSelectedValues().length > 0;
+        }
         
         mergeBtn.disabled = !(hasMain && hasChildren && hasMergeColumn);
     }
+    
+    // Alias for updateMergeButton (used by priority merge callbacks)
+    const updateMergeBtn = updateMergeButton;
     
     // ============================================
     // Merge Operation
@@ -1743,22 +1860,34 @@ document.addEventListener('DOMContentLoaded', function() {
                 }
             });
             
-            const mergeColumns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
             const removeNa = document.getElementById('remove-na-checkbox').checked;
             const dropDuplicates = document.getElementById('drop-duplicates-checkbox').checked;
+            const usePriorityMerge = priorityMergeCheckbox.checked;
+            
+            // Build merge request body
+            const requestBody = {
+                main_file_id: mainFile.file_id,
+                main_columns: mainColumns,
+                main_renames: mainRenames,
+                child_files: childFilesData,
+                merge_type: mergeTypeSelect.value,
+                remove_na: removeNa,
+                drop_duplicates: dropDuplicates
+            };
+            
+            if (usePriorityMerge) {
+                // Priority merge - primary and fallback columns
+                requestBody.priority_merge = true;
+                requestBody.primary_column = primaryMergeColumnSelect.getSelectedValues()[0];
+                requestBody.fallback_column = fallbackMergeColumnSelect.getSelectedValues()[0];
+            } else {
+                // Regular merge - merge columns
+                requestBody.merge_columns = mergeColumnMultiselect ? mergeColumnMultiselect.getSelectedValues() : [];
+            }
             
             const response = await fetch('/merge/perform/', {
                 method: 'POST',
-                body: JSON.stringify({
-                    main_file_id: mainFile.file_id,
-                    main_columns: mainColumns,
-                    main_renames: mainRenames,
-                    child_files: childFilesData,
-                    merge_columns: mergeColumns,
-                    merge_type: mergeTypeSelect.value,
-                    remove_na: removeNa,
-                    drop_duplicates: dropDuplicates
-                }),
+                body: JSON.stringify(requestBody),
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
