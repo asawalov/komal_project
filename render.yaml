@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: komal-excel-tool
+    env: python
+    region: oregon
+    buildCommand: cd excel_aggregator && chmod +x build.sh && ./build.sh
+    startCommand: cd excel_aggregator && gunicorn excel_aggregator.wsgi:application
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: false
+      - key: PYTHON_VERSION
+        value: 3.13.4
