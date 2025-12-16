@@ -481,11 +481,20 @@ def scrape_myntra_product(product_id):
     url = f"https://www.myntra.com/{product_id}"
 
     headers = {
-        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
         "Accept-Language": "en-US,en;q=0.9",
         "Accept-Encoding": "gzip, deflate, br",
         "Connection": "keep-alive",
+        "Cache-Control": "max-age=0",
+        "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
+        "Sec-Ch-Ua-Mobile": "?0",
+        "Sec-Ch-Ua-Platform": '"Windows"',
+        "Sec-Fetch-Dest": "document",
+        "Sec-Fetch-Mode": "navigate",
+        "Sec-Fetch-Site": "none",
+        "Sec-Fetch-User": "?1",
+        "Upgrade-Insecure-Requests": "1",
     }
 
     result = {
@@ -502,7 +511,7 @@ def scrape_myntra_product(product_id):
     }
 
     try:
-        response = requests.get(url, headers=headers, timeout=15)
+        response = requests.get(url, headers=headers, timeout=20)
 
         if response.status_code == 404:
             result["error"] = "Product not found"
@@ -514,66 +523,131 @@ def scrape_myntra_product(product_id):
 
         html_content = response.text
 
-        # Extract product name
-        name_match = re.search(r'"pdpData":\{"id":\d+,"name":"([^"]+)"', html_content)
-        if name_match:
-            result["product_name"] = name_match.group(1)
+        # Try to extract JSON data from script tag
+        pdp_data = None
+        
+        # Method 1: Look for window.__myx JSON
+        myx_match = re.search(r'window\.__myx\s*=\s*(\{.*?\});?\s*</script>', html_content, re.DOTALL)
+        if myx_match:
+            try:
+                myx_data = json.loads(myx_match.group(1))
+                if 'pdpData' in myx_data:
+                    pdp_data = myx_data['pdpData']
+            except json.JSONDecodeError:
+                pass
+        
+        # Method 2: Look for pdpData directly in script
+        if not pdp_data:
+            pdp_match = re.search(r'"pdpData"\s*:\s*(\{[^<]+\})\s*[,}]', html_content)
+            if pdp_match:
+                try:
+                    # Try to extract just the pdpData object
+                    pdp_str = pdp_match.group(1)
+                    # Find matching closing brace
+                    brace_count = 0
+                    end_idx = 0
+                    for i, char in enumerate(pdp_str):
+                        if char == '{':
+                            brace_count += 1
+                        elif char == '}':
+                            brace_count -= 1
+                            if brace_count == 0:
+                                end_idx = i + 1
+                                break
+                    if end_idx > 0:
+                        pdp_data = json.loads(pdp_str[:end_idx])
+                except json.JSONDecodeError:
+                    pass
 
-        # Extract brand - try multiple patterns
-        brand_patterns = [
-            r'"brand":\{"uidx":"[^"]*","name":"([^"]+)"',
-            r'"brand":\{"name":"([^"]+)"',
-            r'"brandName":"([^"]+)"',
-            r'"analytics":\{[^}]*"brand":"([^"]+)"',
-        ]
-        for pattern in brand_patterns:
-            brand_match = re.search(pattern, html_content)
-            if brand_match:
-                result["brand"] = brand_match.group(1)
-                break
+        # Extract data from pdpData if found
+        if pdp_data:
+            result["product_name"] = pdp_data.get("name")
+            
+            # Get brand
+            brand_info = pdp_data.get("brand", {})
+            if isinstance(brand_info, dict):
+                result["brand"] = brand_info.get("name")
+            elif isinstance(brand_info, str):
+                result["brand"] = brand_info
+            
+            # Get price info
+            price_info = pdp_data.get("price", {})
+            if isinstance(price_info, dict):
+                result["mrp"] = price_info.get("mrp")
+                result["price"] = price_info.get("discounted") or result["mrp"]
+                result["discount"] = price_info.get("discount", 0)
+            
+            # Get sizes from pdpData
+            sizes_data = pdp_data.get("sizes", [])
+            for size_info in sizes_data:
+                if isinstance(size_info, dict):
+                    size_entry = {
+                        "size": size_info.get("label", ""),
+                        "available": size_info.get("available", False),
+                        "quantity": size_info.get("inventory", {}).get("quantity") if isinstance(size_info.get("inventory"), dict) else None,
+                        "price": result["price"]
+                    }
+                    # Try to get quantity from different locations
+                    if size_entry["quantity"] is None:
+                        size_entry["quantity"] = size_info.get("availableCount")
+                    if size_entry["quantity"] is None and size_entry["available"]:
+                        size_entry["quantity"] = "In Stock"
+                    result["sizes"].append(size_entry)
 
-        # Extract MRP
-        mrp_match = re.search(r'"pdpData":\{[^}]*"mrp":(\d+)', html_content)
-        if mrp_match:
-            result["mrp"] = int(mrp_match.group(1))
+        # Fallback: Try regex patterns if JSON parsing failed
+        if not result["product_name"]:
+            # Try multiple name patterns
+            name_patterns = [
+                r'"name"\s*:\s*"([^"]+)"',
+                r'<h1[^>]*class="[^"]*title[^"]*"[^>]*>([^<]+)</h1>',
+                r'<meta property="og:title" content="([^"]+)"',
+                r'"productName"\s*:\s*"([^"]+)"',
+            ]
+            for pattern in name_patterns:
+                match = re.search(pattern, html_content)
+                if match:
+                    result["product_name"] = match.group(1).strip()
+                    break
 
-        # Extract discounted price
-        price_match = re.search(r'"price":\{"mrp":\d+,"discounted":(\d+)', html_content)
-        if price_match:
-            result["price"] = int(price_match.group(1))
-        elif result["mrp"]:
-            result["price"] = result["mrp"]
+        if not result["brand"]:
+            brand_patterns = [
+                r'"brand"\s*:\s*\{[^}]*"name"\s*:\s*"([^"]+)"',
+                r'"brandName"\s*:\s*"([^"]+)"',
+                r'<a[^>]*class="[^"]*brand[^"]*"[^>]*>([^<]+)</a>',
+            ]
+            for pattern in brand_patterns:
+                match = re.search(pattern, html_content)
+                if match:
+                    result["brand"] = match.group(1).strip()
+                    break
 
-        # Extract discount - try to find it or calculate it
-        discount_match = re.search(r'"discount":(\d+)', html_content)
-        if discount_match:
-            result["discount"] = int(discount_match.group(1))
-        elif result["mrp"] and result["price"] and result["mrp"] > result["price"]:
-            # Calculate discount percentage
-            result["discount"] = round(
-                ((result["mrp"] - result["price"]) / result["mrp"]) * 100
-            )
+        if not result["mrp"]:
+            mrp_match = re.search(r'"mrp"\s*:\s*(\d+)', html_content)
+            if mrp_match:
+                result["mrp"] = int(mrp_match.group(1))
 
-        # Extract sizes
-        result["sizes"] = extract_sizes_from_html(html_content)
+        if not result["price"]:
+            price_match = re.search(r'"discounted"\s*:\s*(\d+)', html_content)
+            if price_match:
+                result["price"] = int(price_match.group(1))
+            elif result["mrp"]:
+                result["price"] = result["mrp"]
 
-        # Update prices in sizes
-        for size in result["sizes"]:
-            size["price"] = result["price"]
+        # Calculate discount if not found
+        if not result["discount"] and result["mrp"] and result["price"] and result["mrp"] > result["price"]:
+            result["discount"] = round(((result["mrp"] - result["price"]) / result["mrp"]) * 100)
+
+        # Extract sizes if not already found
+        if not result["sizes"]:
+            result["sizes"] = extract_sizes_from_html(html_content)
+            for size in result["sizes"]:
+                size["price"] = result["price"]
 
         # Check if we got the essential data
         if result["product_name"]:
             result["success"] = True
         else:
-            # Try og:title as fallback
-            og_match = re.search(
-                r'<meta property="og:title" content="([^"]+)"', html_content
-            )
-            if og_match:
-                result["product_name"] = og_match.group(1)
-                result["success"] = True
-            else:
-                result["error"] = "Could not parse product data"
+            result["error"] = "Could not parse product data - Myntra may be blocking requests"
 
         return result
 
