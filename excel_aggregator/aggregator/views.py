@@ -127,9 +127,10 @@ def get_column_values(request):
                 status=400,
             )
 
-        # Get unique values
+        # Get unique values in order of first appearance in Excel
         col_series = df[column_name].dropna()
-        unique_values = col_series.unique().tolist()
+        # Use dict.fromkeys to preserve order of first occurrence (Python 3.7+)
+        unique_values = list(dict.fromkeys(col_series.tolist()))
 
         # Clean values for JSON and convert to appropriate types
         cleaned_values = []
@@ -138,20 +139,8 @@ def get_column_values(request):
             # For display purposes, convert to string but keep original value info
             cleaned_values.append(cleaned)
 
-        # Sort values (handle mixed types)
-        try:
-            # Sort numerically if all values are numbers
-            if all(
-                isinstance(v, (int, float)) and v is not None for v in cleaned_values
-            ):
-                cleaned_values = sorted(cleaned_values)
-            else:
-                cleaned_values = sorted(
-                    cleaned_values,
-                    key=lambda x: (x is None, str(x) if x is not None else ""),
-                )
-        except:
-            pass
+        # Keep original Excel order - no sorting
+        # Values appear in the order they first appear in the spreadsheet
 
         return JsonResponse(
             {
@@ -477,29 +466,12 @@ def extract_sizes_from_html(html_content):
 
 
 def scrape_myntra_product(product_id):
-    """Scrape a single Myntra product from their website."""
-    url = f"https://www.myntra.com/{product_id}"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Accept-Encoding": "gzip, deflate, br",
-        "Connection": "keep-alive",
-        "Cache-Control": "max-age=0",
-        "Sec-Ch-Ua": '"Google Chrome";v="131", "Chromium";v="131", "Not_A Brand";v="24"',
-        "Sec-Ch-Ua-Mobile": "?0",
-        "Sec-Ch-Ua-Platform": '"Windows"',
-        "Sec-Fetch-Dest": "document",
-        "Sec-Fetch-Mode": "navigate",
-        "Sec-Fetch-Site": "none",
-        "Sec-Fetch-User": "?1",
-        "Upgrade-Insecure-Requests": "1",
-    }
+    """Scrape a single Myntra product using their API."""
+    import random
 
     result = {
         "product_id": product_id,
-        "url": url,
+        "url": f"https://www.myntra.com/{product_id}",
         "success": False,
         "product_name": None,
         "brand": None,
@@ -510,8 +482,125 @@ def scrape_myntra_product(product_id):
         "error": None,
     }
 
+    # Try multiple approaches
+    methods_tried = []
+
+    # Method 1: Try Myntra's product API directly
+    api_url = f"https://www.myntra.com/gateway/v2/product/{product_id}"
+
+    # Rotate user agents to avoid detection
+    user_agents = [
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.130 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+    ]
+
+    api_headers = {
+        "User-Agent": random.choice(user_agents),
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Encoding": "gzip, deflate, br",
+        "Referer": f"https://www.myntra.com/{product_id}",
+        "Origin": "https://www.myntra.com",
+        "Connection": "keep-alive",
+        "x-location-context": "pincode=110001;source=IP",
+        "x-myntra-app": "desktop",
+        "x-requested-with": "browser",
+    }
+
     try:
-        response = requests.get(url, headers=headers, timeout=20)
+        # Try API first
+        methods_tried.append("API")
+        response = requests.get(api_url, headers=api_headers, timeout=15)
+
+        if response.status_code == 200:
+            try:
+                api_data = response.json()
+                if api_data and "style" in api_data:
+                    style = api_data["style"]
+                    result["product_name"] = style.get("name")
+                    result["brand"] = (
+                        style.get("brand", {}).get("name")
+                        if isinstance(style.get("brand"), dict)
+                        else style.get("brandName")
+                    )
+
+                    price_info = style.get("price", {})
+                    result["mrp"] = price_info.get("mrp")
+                    result["price"] = price_info.get("discounted") or result["mrp"]
+                    result["discount"] = price_info.get("discount", 0)
+
+                    # Get sizes
+                    sizes_data = style.get("sizes", [])
+                    for size_info in sizes_data:
+                        if isinstance(size_info, dict):
+                            qty = (
+                                size_info.get("inventory", {}).get("quantity")
+                                if isinstance(size_info.get("inventory"), dict)
+                                else None
+                            )
+                            if qty is None:
+                                qty = size_info.get("availableCount")
+                            result["sizes"].append(
+                                {
+                                    "size": size_info.get("label", ""),
+                                    "available": size_info.get("available", False),
+                                    "quantity": qty
+                                    if qty is not None
+                                    else (
+                                        "In Stock" if size_info.get("available") else 0
+                                    ),
+                                    "price": result["price"],
+                                }
+                            )
+
+                    if result["product_name"]:
+                        result["success"] = True
+                        return result
+            except json.JSONDecodeError:
+                pass
+
+        # Method 2: Try webpage with session
+        methods_tried.append("Webpage")
+        session = requests.Session()
+
+        # First visit homepage to get cookies
+        homepage_headers = {
+            "User-Agent": random.choice(user_agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Upgrade-Insecure-Requests": "1",
+        }
+
+        try:
+            session.get("https://www.myntra.com/", headers=homepage_headers, timeout=10)
+        except Exception:
+            pass  # Ignore homepage errors, continue with product page
+
+        # Now try the product page with cookies
+        url = f"https://www.myntra.com/{product_id}"
+        page_headers = {
+            "User-Agent": random.choice(user_agents),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Connection": "keep-alive",
+            "Cache-Control": "max-age=0",
+            "Sec-Ch-Ua": '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+            "Sec-Ch-Ua-Mobile": "?0",
+            "Sec-Ch-Ua-Platform": '"Windows"',
+            "Sec-Fetch-Dest": "document",
+            "Sec-Fetch-Mode": "navigate",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-User": "?1",
+            "Upgrade-Insecure-Requests": "1",
+            "Referer": "https://www.myntra.com/",
+        }
+
+        response = session.get(url, headers=page_headers, timeout=20)
 
         if response.status_code == 404:
             result["error"] = "Product not found"
@@ -675,8 +764,13 @@ def scrape_myntra_product(product_id):
         if result["product_name"]:
             result["success"] = True
         else:
+            # Add methods tried to parsing details
+            parsing_details["methods_tried"] = methods_tried
+
             # Build detailed error message
-            error_parts = ["Could not parse product data."]
+            error_parts = [
+                f"Could not parse product data. Methods tried: {', '.join(methods_tried)}."
+            ]
 
             if (
                 not parsing_details["found_myx_data"]
@@ -694,11 +788,11 @@ def scrape_myntra_product(product_id):
 
                 if parsing_details["html_length"] < 5000:
                     error_parts.append(
-                        f"Response too short ({parsing_details['html_length']} chars) - likely blocked by Myntra."
+                        f"Response too short ({parsing_details['html_length']} chars) - Myntra is blocking requests from this server/IP."
                     )
                 elif not parsing_details["has_script_tags"]:
                     error_parts.append(
-                        "No script tags found - Myntra may be serving a different page."
+                        "No script tags found - Myntra may be serving a challenge page."
                     )
                 else:
                     error_parts.append(
@@ -710,19 +804,29 @@ def scrape_myntra_product(product_id):
                     f"Available keys: {parsing_details.get('pdp_keys', [])}"
                 )
 
+            error_parts.append(
+                "Note: Myntra actively blocks automated requests. This feature works best when running locally."
+            )
+
             result["error"] = " ".join(error_parts)
             result["debug_info"] = parsing_details
 
         return result
 
     except requests.exceptions.Timeout:
-        result["error"] = "Request timeout"
+        result["error"] = (
+            f"Request timeout. Methods tried: {', '.join(methods_tried) if methods_tried else 'none'}. Myntra may be slow or blocking."
+        )
         return result
     except requests.exceptions.RequestException as e:
-        result["error"] = f"Request error: {str(e)}"
+        result["error"] = (
+            f"Request error: {str(e)}. Methods tried: {', '.join(methods_tried) if methods_tried else 'none'}"
+        )
         return result
     except Exception as e:
-        result["error"] = f"Error: {str(e)}"
+        result["error"] = (
+            f"Error: {str(e)}. Methods tried: {', '.join(methods_tried) if methods_tried else 'none'}"
+        )
         return result
 
 
