@@ -1,1 +1,1 @@
-web: cd excel_aggregator && python manage.py collectstatic --noinput && python manage.py migrate && gunicorn excel_aggregator.wsgi:application --bind 0.0.0.0:$PORT
+web: cd excel_aggregator && pip install -r ../requirements.txt && python manage.py collectstatic --noinput && python manage.py migrate && gunicorn excel_aggregator.wsgi:application --bind 0.0.0.0:$PORT --workers 2 --timeout 120
