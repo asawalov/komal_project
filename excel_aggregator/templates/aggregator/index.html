@@ -681,19 +681,19 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         }
         
-        // Create filter section for each selected column
+        // Find columns that need fetching (not cached)
+        const columnsToFetch = currentColumns.filter(col => !columnValuesCache[col]);
+        
+        // Fetch all column values in PARALLEL using Promise.all
+        if (columnsToFetch.length > 0) {
+            console.log(`Fetching ${columnsToFetch.length} columns in parallel...`);
+            await Promise.all(columnsToFetch.map(col => fetchColumnValues(col)));
+            console.log('All column values fetched!');
+        }
+        
+        // Create filter sections for all columns
         for (const col of currentColumns) {
             // Check if selection changed during async operations
-            if (!selectedGroupByColumns.includes(col)) {
-                continue;
-            }
-            
-            // Fetch column values if not cached
-            if (!columnValuesCache[col]) {
-                await fetchColumnValues(col);
-            }
-            
-            // Check again after async fetch
             if (!selectedGroupByColumns.includes(col)) {
                 continue;
             }
