@@ -2085,7 +2085,22 @@ document.addEventListener('DOMContentLoaded', function() {
             tbody.appendChild(tr);
         });
         
-        downloadBtn.href = data.download_url;
+        // Create download from base64 data (works on all platforms)
+        if (data.file_data) {
+            // Convert base64 to blob
+            const byteCharacters = atob(data.file_data);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            
+            // Create object URL for download
+            const url = URL.createObjectURL(blob);
+            downloadBtn.href = url;
+            downloadBtn.download = data.filename || 'merged.xlsx';
+        }
         
         resultsCard.classList.remove('hidden');
         resultsCard.scrollIntoView({ behavior: 'smooth' });

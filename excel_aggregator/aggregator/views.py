@@ -539,9 +539,12 @@ def scrape_myntra_product(product_id):
                 pass
 
         # Method 2: Look for pdpData directly in script
+        pdp_match_found = False
+        pdp_json_error = None
         if not pdp_data:
             pdp_match = re.search(r'"pdpData"\s*:\s*(\{[^<]+\})\s*[,}]', html_content)
             if pdp_match:
+                pdp_match_found = True
                 try:
                     # Try to extract just the pdpData object
                     pdp_str = pdp_match.group(1)
@@ -558,11 +561,25 @@ def scrape_myntra_product(product_id):
                                 break
                     if end_idx > 0:
                         pdp_data = json.loads(pdp_str[:end_idx])
-                except json.JSONDecodeError:
-                    pass
+                except json.JSONDecodeError as e:
+                    pdp_json_error = str(e)
+
+        # Track parsing details for error reporting
+        parsing_details = {
+            "found_myx_data": myx_match is not None,
+            "found_pdp_match": pdp_match_found,
+            "pdp_json_error": pdp_json_error,
+            "found_pdp_data": pdp_data is not None,
+            "html_length": len(html_content),
+            "has_script_tags": "<script" in html_content,
+            "response_snippet": html_content[:500]
+            if len(html_content) < 5000
+            else None,
+        }
 
         # Extract data from pdpData if found
         if pdp_data:
+            parsing_details["pdp_keys"] = list(pdp_data.keys())[:10]  # First 10 keys
             result["product_name"] = pdp_data.get("name")
 
             # Get brand
@@ -658,9 +675,43 @@ def scrape_myntra_product(product_id):
         if result["product_name"]:
             result["success"] = True
         else:
-            result["error"] = (
-                "Could not parse product data - Myntra may be blocking requests"
-            )
+            # Build detailed error message
+            error_parts = ["Could not parse product data."]
+
+            if (
+                not parsing_details["found_myx_data"]
+                and not parsing_details["found_pdp_data"]
+            ):
+                if (
+                    parsing_details["found_pdp_match"]
+                    and parsing_details["pdp_json_error"]
+                ):
+                    error_parts.append(
+                        f"Found pdpData but JSON parse failed: {parsing_details['pdp_json_error']}"
+                    )
+                else:
+                    error_parts.append("No JSON data found in page.")
+
+                if parsing_details["html_length"] < 5000:
+                    error_parts.append(
+                        f"Response too short ({parsing_details['html_length']} chars) - likely blocked by Myntra."
+                    )
+                elif not parsing_details["has_script_tags"]:
+                    error_parts.append(
+                        "No script tags found - Myntra may be serving a different page."
+                    )
+                else:
+                    error_parts.append(
+                        "Myntra may be blocking requests or page structure changed."
+                    )
+            elif parsing_details["found_pdp_data"]:
+                error_parts.append("Found pdpData but missing 'name' field.")
+                error_parts.append(
+                    f"Available keys: {parsing_details.get('pdp_keys', [])}"
+                )
+
+            result["error"] = " ".join(error_parts)
+            result["debug_info"] = parsing_details
 
         return result
 
@@ -1110,19 +1161,19 @@ def perform_merge(request):
         # Get column info
         result_columns = result_df.columns.tolist()
 
-        # Save the merged file
-        import os
-        from django.conf import settings
+        # Generate the Excel file in memory (works on all platforms including Railway)
+        import io
+        import base64
         import uuid
 
+        # Create Excel file in memory
+        output = io.BytesIO()
+        result_df.to_excel(output, index=False, engine="openpyxl")
+        output.seek(0)
+
+        # Encode as base64 for download
+        file_base64 = base64.b64encode(output.getvalue()).decode("utf-8")
         merged_filename = f"merged_{uuid.uuid4().hex[:8]}.xlsx"
-        merged_path = os.path.join(settings.MEDIA_ROOT, "merged", merged_filename)
-
-        # Ensure directory exists
-        os.makedirs(os.path.dirname(merged_path), exist_ok=True)
-
-        # Save to Excel
-        result_df.to_excel(merged_path, index=False)
 
         return JsonResponse(
             {
@@ -1131,7 +1182,8 @@ def perform_merge(request):
                 "total_columns": len(result_columns),
                 "columns": result_columns,
                 "preview": preview_data,
-                "download_url": f"/media/merged/{merged_filename}",
+                "file_data": file_base64,
+                "filename": merged_filename,
             }
         )
 

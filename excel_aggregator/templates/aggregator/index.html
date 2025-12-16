@@ -186,6 +186,37 @@
         color: var(--text-muted);
     }
     
+    .filter-loading {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.25rem;
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        align-items: center;
+    }
+    
+    .filter-loading .filter-section-header {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+    
+    .loading-spinner-small {
+        width: 24px;
+        height: 24px;
+        border: 3px solid var(--border-color);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
     .filter-container {
         position: relative;
     }
@@ -408,8 +439,6 @@ document.addEventListener('DOMContentLoaded', function() {
     let columnFilters = {};  // Selected filters: {column: [selected values]}
     let selectedAggColumns = [];
     let selectedAggType = 'sum';
-    let isUpdatingFilters = false;  // Flag to prevent concurrent updates
-    let pendingFilterUpdate = false;  // Flag for pending updates
     
     // DOM elements
     const uploadZone = document.getElementById('upload-zone');
@@ -616,44 +645,52 @@ document.addEventListener('DOMContentLoaded', function() {
         return cols;
     }
     
-    async function updateSelectedGroupByColumns() {
+    // Track which columns are currently being fetched
+    const fetchingColumns = new Set();
+    
+    function updateSelectedGroupByColumns() {
         // Get current selection
+        const previousColumns = [...selectedGroupByColumns];
         selectedGroupByColumns = getSelectedGroupByColumns();
         
-        // If already updating, mark as pending and return
-        if (isUpdatingFilters) {
-            pendingFilterUpdate = true;
-            return;
+        // Find newly added and removed columns
+        const addedColumns = selectedGroupByColumns.filter(col => !previousColumns.includes(col));
+        const removedColumns = previousColumns.filter(col => !selectedGroupByColumns.includes(col));
+        
+        // Remove filter sections for deselected columns
+        removedColumns.forEach(col => {
+            delete columnFilters[col];
+            // Remove actual filter section
+            const section = filtersContainer.querySelector(`.filter-section[data-column="${col}"]`);
+            if (section) section.remove();
+            // Also remove loading placeholder if it exists
+            const loading = filtersContainer.querySelector(`.filter-loading[data-column="${col}"]`);
+            if (loading) loading.remove();
+        });
+        
+        // Immediately start fetching newly added columns (truly parallel, fire-and-forget)
+        addedColumns.forEach(col => {
+            if (!columnValuesCache[col] && !fetchingColumns.has(col)) {
+                fetchColumnAsync(col);
+            } else if (columnValuesCache[col]) {
+                // Already cached, create section immediately
+                createFilterSectionIfNeeded(col);
+            }
+        });
+        
+        // Show/hide subsequent sections
+        if (selectedGroupByColumns.length > 0) {
+            filtersCard.classList.remove('hidden');
+            populateAggColumns();
+            aggColumnsCard.classList.remove('hidden');
+            aggregationCard.classList.remove('hidden');
+        } else {
+            filtersCard.classList.add('hidden');
+            aggColumnsCard.classList.add('hidden');
+            aggregationCard.classList.add('hidden');
         }
         
-        isUpdatingFilters = true;
-        
-        try {
-            // Update filters section
-            await updateFiltersSection();
-            
-            // Show/hide subsequent sections
-            if (selectedGroupByColumns.length > 0) {
-                filtersCard.classList.remove('hidden');
-                populateAggColumns();
-                aggColumnsCard.classList.remove('hidden');
-                aggregationCard.classList.remove('hidden');
-            } else {
-                filtersCard.classList.add('hidden');
-                aggColumnsCard.classList.add('hidden');
-                aggregationCard.classList.add('hidden');
-            }
-            
-            resultsCard.classList.add('hidden');
-        } finally {
-            isUpdatingFilters = false;
-            
-            // If there was a pending update, run it now
-            if (pendingFilterUpdate) {
-                pendingFilterUpdate = false;
-                updateSelectedGroupByColumns();
-            }
-        }
+        resultsCard.classList.add('hidden');
     }
     
     // Clear all group by columns
@@ -666,45 +703,65 @@ document.addEventListener('DOMContentLoaded', function() {
         updateSelectedGroupByColumns();
     });
     
-    // Update filters section for selected columns
-    async function updateFiltersSection() {
-        // Get current selection at the time of this call
-        const currentColumns = [...selectedGroupByColumns];
+    // Fetch a single column asynchronously (fire and forget - doesn't block other fetches)
+    async function fetchColumnAsync(columnName) {
+        console.log(`Starting fetch for column: ${columnName}`);
+        fetchingColumns.add(columnName);
         
-        // Clear existing content
-        filtersContainer.innerHTML = '';
+        // Show loading placeholder immediately
+        showColumnLoadingPlaceholder(columnName);
         
-        // Remove filters for columns that are no longer selected
-        for (const col of Object.keys(columnFilters)) {
-            if (!currentColumns.includes(col)) {
-                delete columnFilters[col];
-            }
+        try {
+            await fetchColumnValues(columnName);
+            console.log(`Completed fetch for column: ${columnName}`);
+        } finally {
+            fetchingColumns.delete(columnName);
         }
         
-        // Find columns that need fetching (not cached)
-        const columnsToFetch = currentColumns.filter(col => !columnValuesCache[col]);
+        // After fetch completes, create the filter section if column is still selected
+        if (selectedGroupByColumns.includes(columnName)) {
+            removeColumnLoadingPlaceholder(columnName);
+            createFilterSectionIfNeeded(columnName);
+        }
+    }
+    
+    // Show loading placeholder for a column
+    function showColumnLoadingPlaceholder(columnName) {
+        // Check if placeholder already exists
+        if (filtersContainer.querySelector(`.filter-loading[data-column="${columnName}"]`)) return;
         
-        // Fetch all column values in PARALLEL using Promise.all
-        if (columnsToFetch.length > 0) {
-            console.log(`Fetching ${columnsToFetch.length} columns in parallel...`);
-            await Promise.all(columnsToFetch.map(col => fetchColumnValues(col)));
-            console.log('All column values fetched!');
+        const placeholder = document.createElement('div');
+        placeholder.className = 'filter-loading';
+        placeholder.dataset.column = columnName;
+        placeholder.innerHTML = `
+            <div class="filter-section-header">
+                <span class="filter-section-title">${columnName}</span>
+                <span class="filter-section-meta">Loading...</span>
+            </div>
+            <div class="loading-spinner-small"></div>
+        `;
+        filtersContainer.appendChild(placeholder);
+    }
+    
+    // Remove loading placeholder for a column
+    function removeColumnLoadingPlaceholder(columnName) {
+        const placeholder = filtersContainer.querySelector(`.filter-loading[data-column="${columnName}"]`);
+        if (placeholder) placeholder.remove();
+    }
+    
+    // Create filter section if it doesn't exist and column is still selected
+    function createFilterSectionIfNeeded(columnName) {
+        // Check if section already exists
+        if (filtersContainer.querySelector(`.filter-section[data-column="${columnName}"]`)) return;
+        // Check if column is still selected
+        if (!selectedGroupByColumns.includes(columnName)) return;
+        
+        // Initialize filters array if not exists
+        if (!columnFilters[columnName]) {
+            columnFilters[columnName] = [];
         }
         
-        // Create filter sections for all columns
-        for (const col of currentColumns) {
-            // Check if selection changed during async operations
-            if (!selectedGroupByColumns.includes(col)) {
-                continue;
-            }
-            
-            // Initialize filters array if not exists
-            if (!columnFilters[col]) {
-                columnFilters[col] = [];
-            }
-            
-            createFilterSection(col);
-        }
+        createFilterSection(columnName);
     }
     
     // Fetch unique values for a column
