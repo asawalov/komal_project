@@ -525,17 +525,19 @@ def scrape_myntra_product(product_id):
 
         # Try to extract JSON data from script tag
         pdp_data = None
-        
+
         # Method 1: Look for window.__myx JSON
-        myx_match = re.search(r'window\.__myx\s*=\s*(\{.*?\});?\s*</script>', html_content, re.DOTALL)
+        myx_match = re.search(
+            r"window\.__myx\s*=\s*(\{.*?\});?\s*</script>", html_content, re.DOTALL
+        )
         if myx_match:
             try:
                 myx_data = json.loads(myx_match.group(1))
-                if 'pdpData' in myx_data:
-                    pdp_data = myx_data['pdpData']
+                if "pdpData" in myx_data:
+                    pdp_data = myx_data["pdpData"]
             except json.JSONDecodeError:
                 pass
-        
+
         # Method 2: Look for pdpData directly in script
         if not pdp_data:
             pdp_match = re.search(r'"pdpData"\s*:\s*(\{[^<]+\})\s*[,}]', html_content)
@@ -547,9 +549,9 @@ def scrape_myntra_product(product_id):
                     brace_count = 0
                     end_idx = 0
                     for i, char in enumerate(pdp_str):
-                        if char == '{':
+                        if char == "{":
                             brace_count += 1
-                        elif char == '}':
+                        elif char == "}":
                             brace_count -= 1
                             if brace_count == 0:
                                 end_idx = i + 1
@@ -562,21 +564,21 @@ def scrape_myntra_product(product_id):
         # Extract data from pdpData if found
         if pdp_data:
             result["product_name"] = pdp_data.get("name")
-            
+
             # Get brand
             brand_info = pdp_data.get("brand", {})
             if isinstance(brand_info, dict):
                 result["brand"] = brand_info.get("name")
             elif isinstance(brand_info, str):
                 result["brand"] = brand_info
-            
+
             # Get price info
             price_info = pdp_data.get("price", {})
             if isinstance(price_info, dict):
                 result["mrp"] = price_info.get("mrp")
                 result["price"] = price_info.get("discounted") or result["mrp"]
                 result["discount"] = price_info.get("discount", 0)
-            
+
             # Get sizes from pdpData
             sizes_data = pdp_data.get("sizes", [])
             for size_info in sizes_data:
@@ -584,8 +586,10 @@ def scrape_myntra_product(product_id):
                     size_entry = {
                         "size": size_info.get("label", ""),
                         "available": size_info.get("available", False),
-                        "quantity": size_info.get("inventory", {}).get("quantity") if isinstance(size_info.get("inventory"), dict) else None,
-                        "price": result["price"]
+                        "quantity": size_info.get("inventory", {}).get("quantity")
+                        if isinstance(size_info.get("inventory"), dict)
+                        else None,
+                        "price": result["price"],
                     }
                     # Try to get quantity from different locations
                     if size_entry["quantity"] is None:
@@ -634,8 +638,15 @@ def scrape_myntra_product(product_id):
                 result["price"] = result["mrp"]
 
         # Calculate discount if not found
-        if not result["discount"] and result["mrp"] and result["price"] and result["mrp"] > result["price"]:
-            result["discount"] = round(((result["mrp"] - result["price"]) / result["mrp"]) * 100)
+        if (
+            not result["discount"]
+            and result["mrp"]
+            and result["price"]
+            and result["mrp"] > result["price"]
+        ):
+            result["discount"] = round(
+                ((result["mrp"] - result["price"]) / result["mrp"]) * 100
+            )
 
         # Extract sizes if not already found
         if not result["sizes"]:
@@ -647,7 +658,9 @@ def scrape_myntra_product(product_id):
         if result["product_name"]:
             result["success"] = True
         else:
-            result["error"] = "Could not parse product data - Myntra may be blocking requests"
+            result["error"] = (
+                "Could not parse product data - Myntra may be blocking requests"
+            )
 
         return result
 
