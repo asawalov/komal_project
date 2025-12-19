@@ -1296,3 +1296,384 @@ def perform_merge(request):
 
         traceback.print_exc()
         return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+
+# =============================================================================
+# Formula Columns Feature
+# =============================================================================
+
+
+def formula_columns(request):
+    """Render the formula columns page."""
+    return render(request, "aggregator/formula_columns.html")
+
+
+@require_http_methods(["POST"])
+def formula_upload(request):
+    """Upload Excel file for formula processing."""
+    try:
+        if "file" not in request.FILES:
+            return JsonResponse(
+                {"success": False, "error": "No file provided"}, status=400
+            )
+
+        uploaded_file = request.FILES["file"]
+        file_name = uploaded_file.name.lower()
+
+        # Save the file
+        excel_instance = UploadedExcel(file=uploaded_file)
+        excel_instance.save()
+
+        file_path = excel_instance.file.path
+
+        # Read all sheets
+        sheets_info = {}
+
+        if file_name.endswith(".csv"):
+            df = pd.read_csv(file_path)
+
+            # Handle MultiIndex columns (flatten if needed)
+            if isinstance(df.columns, pd.MultiIndex):
+                # Flatten MultiIndex columns by joining levels
+                df.columns = [
+                    "_".join(str(c) for c in col).strip() for col in df.columns.values
+                ]
+
+            # Convert columns to list and then to strings
+            column_list = df.columns.tolist()
+
+            # Filter out unnamed columns and ensure they are strings
+            columns = []
+            for col in column_list:
+                col_str = str(col).strip()
+                # Skip unnamed columns and empty strings
+                if col_str and not col_str.startswith("Unnamed") and col_str != "":
+                    columns.append(col_str)
+
+            sheets_info["Sheet1"] = {
+                "columns": columns,
+                "numeric_columns": [
+                    col
+                    for col in columns
+                    if col in df.select_dtypes(include=[np.number]).columns
+                ],
+                "row_count": len(df),
+            }
+        else:
+            # Read Excel with all sheets
+            xl = pd.ExcelFile(file_path)
+            for sheet_name in xl.sheet_names:
+                df = pd.read_excel(xl, sheet_name=sheet_name)
+
+                # Handle MultiIndex columns (flatten if needed)
+                if isinstance(df.columns, pd.MultiIndex):
+                    # Flatten MultiIndex columns by joining levels
+                    df.columns = [
+                        "_".join(str(c) for c in col).strip()
+                        for col in df.columns.values
+                    ]
+
+                # Convert columns to list and then to strings
+                # This ensures we get actual column names, not indices
+                column_list = df.columns.tolist()
+
+                # Filter out unnamed columns and ensure they are strings
+                columns = []
+                for col in column_list:
+                    col_str = str(col).strip()
+                    # Skip unnamed columns and empty strings
+                    if col_str and not col_str.startswith("Unnamed") and col_str != "":
+                        columns.append(col_str)
+
+                sheets_info[sheet_name] = {
+                    "columns": columns,
+                    "numeric_columns": [
+                        col
+                        for col in columns
+                        if col in df.select_dtypes(include=[np.number]).columns
+                    ],
+                    "row_count": len(df),
+                }
+
+        return JsonResponse(
+            {
+                "success": True,
+                "file_id": excel_instance.id,
+                "sheets": sheets_info,
+            }
+        )
+
+    except Exception as e:
+        return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+
+@require_http_methods(["POST"])
+def formula_validate(request):
+    """Validate formula definitions."""
+    try:
+        from .formula_engine import create_formula_engine, ExcelError
+
+        data = json.loads(request.body)
+        # Support both single file_id and multiple files
+        files_data = data.get("files", [])  # New: list of { fileId, label }
+        file_id = data.get("file_id")  # Legacy support
+        column_defs = data.get("columns", [])
+
+        # Handle legacy single file format
+        if not files_data and file_id:
+            files_data = [{"fileId": file_id, "label": "File1"}]
+
+        if not files_data:
+            return JsonResponse(
+                {"success": False, "error": "No files provided"}, status=400
+            )
+
+        if not column_defs:
+            return JsonResponse(
+                {"success": False, "error": "No column definitions provided"},
+                status=400,
+            )
+
+        # Load all files into a combined dataframes dict
+        dataframes = {}
+        for file_info in files_data:
+            fid = file_info.get("fileId")
+            label = file_info.get("label", f"File{fid}")
+
+            excel_instance = get_object_or_404(UploadedExcel, id=fid)
+            file_path = excel_instance.file.path
+
+            if file_path.lower().endswith(".csv"):
+                sheet_key = f"{label}.Sheet1"
+                dataframes[sheet_key] = pd.read_csv(file_path)
+            else:
+                xl = pd.ExcelFile(file_path)
+                for sheet_name in xl.sheet_names:
+                    sheet_key = f"{label}.{sheet_name}"
+                    dataframes[sheet_key] = pd.read_excel(xl, sheet_name=sheet_name)
+
+        # Create execution manager
+        manager = create_formula_engine(dataframes)
+
+        # Add column definitions
+        for col_def in column_defs:
+            name = col_def.get("name", "").strip()
+            formula = col_def.get("formula", "").strip()
+            sheet = col_def.get("sheet", list(dataframes.keys())[0])
+
+            if not name:
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "valid": False,
+                        "errors": [
+                            {"type": "VALUE", "message": "Column name is required"}
+                        ],
+                    },
+                    status=400,
+                )
+
+            if not formula:
+                return JsonResponse(
+                    {
+                        "success": False,
+                        "valid": False,
+                        "errors": [
+                            {
+                                "type": "VALUE",
+                                "message": f"Formula is required for column '{name}'",
+                            }
+                        ],
+                    },
+                    status=400,
+                )
+
+            # Ensure formula starts with =
+            if not formula.startswith("="):
+                formula = "=" + formula
+
+            manager.add_column_definition(name, formula, sheet)
+
+        # Validate
+        validation = manager.validate()
+
+        return JsonResponse(
+            {
+                "success": True,
+                "valid": validation["valid"],
+                "errors": validation.get("errors", []),
+                "warnings": validation.get("warnings", []),
+                "dependency_order": validation.get("dependency_order", []),
+            }
+        )
+
+    except ExcelError as e:
+        return JsonResponse(
+            {
+                "success": False,
+                "valid": False,
+                "errors": [
+                    {
+                        "type": e.error_type,
+                        "error_code": e.error_code,
+                        "message": e.message,
+                        "details": e.details,
+                    }
+                ],
+            }
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return JsonResponse(
+            {
+                "success": False,
+                "valid": False,
+                "errors": [{"type": "ERROR", "message": str(e)}],
+            },
+            status=400,
+        )
+
+
+@require_http_methods(["POST"])
+def formula_execute(request):
+    """Execute formula definitions and return results."""
+    try:
+        from .formula_engine import create_formula_engine, ExcelError
+        import io
+        import base64
+        import uuid
+
+        data = json.loads(request.body)
+        # Support both single file_id and multiple files
+        files_data = data.get("files", [])  # New: list of { fileId, label }
+        file_id = data.get("file_id")  # Legacy support
+        column_defs = data.get("columns", [])
+        target_sheet = data.get("target_sheet")  # New: where to add columns
+
+        # Handle legacy single file format
+        if not files_data and file_id:
+            files_data = [{"fileId": file_id, "label": "File1"}]
+
+        if not files_data:
+            return JsonResponse(
+                {"success": False, "error": "No files provided"}, status=400
+            )
+
+        # Load all files into a combined dataframes dict
+        # Key format: "FileLabel.SheetName"
+        dataframes = {}
+        default_sheet = None
+
+        for file_info in files_data:
+            fid = file_info.get("fileId")
+            label = file_info.get("label", f"File{fid}")
+
+            excel_instance = get_object_or_404(UploadedExcel, id=fid)
+            file_path = excel_instance.file.path
+
+            if file_path.lower().endswith(".csv"):
+                sheet_key = f"{label}.Sheet1"
+                dataframes[sheet_key] = pd.read_csv(file_path)
+                if not default_sheet:
+                    default_sheet = sheet_key
+            else:
+                xl = pd.ExcelFile(file_path)
+                for sheet_name in xl.sheet_names:
+                    sheet_key = f"{label}.{sheet_name}"
+                    dataframes[sheet_key] = pd.read_excel(xl, sheet_name=sheet_name)
+                    if not default_sheet:
+                        default_sheet = sheet_key
+
+        # Use target sheet if provided
+        if target_sheet and target_sheet in dataframes:
+            default_sheet = target_sheet
+
+        # Create execution manager
+        manager = create_formula_engine(dataframes, default_sheet)
+
+        # Add column definitions
+        for col_def in column_defs:
+            name = col_def.get("name", "").strip()
+            formula = col_def.get("formula", "").strip()
+            sheet = col_def.get("sheet", default_sheet)
+
+            if not formula.startswith("="):
+                formula = "=" + formula
+
+            manager.add_column_definition(name, formula, sheet)
+
+        # Execute
+        result = manager.execute()
+
+        if not result["success"]:
+            return JsonResponse(
+                {
+                    "success": False,
+                    "error": "Execution failed",
+                    "errors": result.get("errors", []),
+                },
+                status=400,
+            )
+
+        # Get result DataFrame
+        result_df = manager.get_result_dataframe(default_sheet)
+
+        # Count cell errors
+        cell_errors = 0
+        for col in result_df.columns:
+            for val in result_df[col]:
+                if isinstance(val, str) and val.startswith("#"):
+                    cell_errors += 1
+
+        # Prepare preview (first 20 rows)
+        preview_df = result_df.head(20)
+        preview_data = []
+        for _, row in preview_df.iterrows():
+            row_dict = {}
+            for col in preview_df.columns:
+                val = row[col]
+                row_dict[col] = clean_for_json(val)
+            preview_data.append(row_dict)
+
+        # Get all columns
+        result_columns = list(result_df.columns)
+
+        # Create Excel file in memory
+        output = io.BytesIO()
+        result_df.to_excel(output, index=False, engine="openpyxl")
+        output.seek(0)
+
+        # Encode as base64
+        file_base64 = base64.b64encode(output.getvalue()).decode("utf-8")
+        result_filename = f"formula_result_{uuid.uuid4().hex[:8]}.xlsx"
+
+        return JsonResponse(
+            {
+                "success": True,
+                "total_rows": len(result_df),
+                "total_columns": len(result_columns),
+                "new_columns": len(column_defs),
+                "cell_errors": cell_errors,
+                "columns": result_columns,
+                "preview": preview_data,
+                "file_data": file_base64,
+                "filename": result_filename,
+            }
+        )
+
+    except ExcelError as e:
+        return JsonResponse(
+            {
+                "success": False,
+                "error": f"{e.error_code} {e.message}",
+                "details": e.details,
+            },
+            status=400,
+        )
+    except Exception as e:
+        import traceback
+
+        traceback.print_exc()
+        return JsonResponse({"success": False, "error": str(e)}, status=400)

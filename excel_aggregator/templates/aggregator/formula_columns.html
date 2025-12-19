@@ -1,0 +1,2501 @@
+{% extends 'base.html' %}
+
+{% block title %}Formula Columns - Excel Calculator{% endblock %}
+
+{% block content %}
+<style>
+    .formula-header {
+        text-align: center;
+        margin-bottom: 2rem;
+    }
+    
+    .formula-header h1 {
+        font-size: 2.5rem;
+        margin-bottom: 0.5rem;
+        background: linear-gradient(135deg, var(--accent-primary), var(--accent-secondary));
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        background-clip: text;
+    }
+    
+    .formula-header p {
+        color: var(--text-muted);
+        font-size: 1.1rem;
+    }
+    
+    .nav-links {
+        margin-bottom: 2rem;
+    }
+    
+    .nav-links a {
+        margin-right: 0.5rem;
+    }
+    
+    /* Multi-file upload styling */
+    #uploaded-files-container {
+        display: flex;
+        flex-direction: column;
+        gap: 1rem;
+        margin-bottom: 1rem;
+    }
+    
+    .uploaded-file-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 10px;
+        padding: 1rem;
+        position: relative;
+    }
+    
+    .uploaded-file-card:hover {
+        border-color: var(--accent-primary);
+    }
+    
+    .uploaded-file-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 0.75rem;
+    }
+    
+    .uploaded-file-name {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        font-weight: 600;
+        color: var(--text-primary);
+    }
+    
+    .uploaded-file-name .file-icon {
+        font-size: 1.2rem;
+    }
+    
+    .uploaded-file-id {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        background: var(--bg-tertiary);
+        padding: 0.2rem 0.5rem;
+        border-radius: 4px;
+    }
+    
+    .uploaded-file-remove {
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-muted);
+        cursor: pointer;
+        padding: 0.3rem 0.6rem;
+        font-size: 0.9rem;
+        transition: all 0.2s ease;
+    }
+    
+    .uploaded-file-remove:hover {
+        background: var(--error);
+        border-color: var(--error);
+        color: white;
+    }
+    
+    .sheets-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+    }
+    
+    .sheet-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.4rem 0.75rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.85rem;
+    }
+    
+    .sheet-badge .sheet-name {
+        font-weight: 500;
+    }
+    
+    .sheet-badge .count {
+        font-size: 0.7rem;
+        padding: 0.1rem 0.4rem;
+        background: var(--accent-primary);
+        color: white;
+        border-radius: 4px;
+    }
+    
+    /* File selector in formula builder */
+    .formula-select.file-select {
+        min-width: 150px;
+        background: var(--bg-tertiary);
+        font-weight: 500;
+    }
+    
+    /* Column definitions */
+    .column-definitions {
+        display: flex;
+        flex-direction: column;
+        gap: 1.5rem;
+    }
+    
+    .column-def {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 1.5rem;
+        position: relative;
+        transition: all 0.2s ease;
+    }
+    
+    .column-def:hover {
+        border-color: var(--accent-primary);
+    }
+    
+    .column-def-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 1rem;
+    }
+    
+    .column-def-number {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--accent-primary);
+        color: white;
+        border-radius: 50%;
+        font-size: 0.85rem;
+        font-weight: 600;
+    }
+    
+    .column-def-remove {
+        width: 32px;
+        height: 32px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: transparent;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .column-def-remove:hover {
+        background: var(--error);
+        border-color: var(--error);
+        color: white;
+    }
+    
+    .field-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .field-label {
+        font-size: 0.85rem;
+        font-weight: 500;
+        color: var(--text-secondary);
+    }
+    
+    .field-input {
+        padding: 0.75rem 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        transition: all 0.2s ease;
+    }
+    
+    .field-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    
+    .field-hint {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    
+    /* Formula Builder */
+    .formula-builder {
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+    }
+    
+    .formula-row {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+        margin-bottom: 0.75rem;
+    }
+    
+    .formula-row:last-child {
+        margin-bottom: 0;
+    }
+    
+    .formula-select {
+        padding: 0.5rem 0.75rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        min-width: 120px;
+        cursor: pointer;
+    }
+    
+    .formula-select:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .formula-select.function-select {
+        min-width: 100px;
+        font-weight: 600;
+        background: var(--accent-primary);
+        color: white;
+        border-color: var(--accent-primary);
+    }
+    
+    .formula-select.sheet-select {
+        min-width: 140px;
+    }
+    
+    .formula-select.column-select {
+        min-width: 160px;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    /* Autocomplete (Single Select) */
+    .column-autocomplete,
+    .multi-column-autocomplete {
+        position: relative;
+        min-width: 180px;
+        flex: 1;
+    }
+    
+    .column-autocomplete-wrapper {
+        position: relative;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 0.4rem 0.5rem;
+        min-height: 38px;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        cursor: text;
+    }
+    
+    .column-autocomplete-wrapper:focus-within {
+        border-color: var(--accent-primary);
+        box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
+    }
+    
+    .column-autocomplete-input {
+        flex: 1;
+        border: none;
+        background: transparent;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        font-family: 'JetBrains Mono', monospace;
+        min-width: 100px;
+        outline: none;
+    }
+    
+    .column-autocomplete-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.2rem 0.5rem;
+        background: var(--accent-primary);
+        color: white;
+        border-radius: 4px;
+        font-size: 0.8rem;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .column-autocomplete-tag-remove {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 1rem;
+        line-height: 1;
+        padding: 0;
+        width: 16px;
+        height: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .column-autocomplete-tag-remove:hover {
+        background: rgba(255,255,255,0.2);
+        border-radius: 2px;
+    }
+    
+    .column-autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        z-index: 100;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        display: none;
+        margin-top: 0.25rem;
+    }
+    
+    .column-autocomplete-dropdown.open {
+        display: block;
+    }
+    
+    .column-autocomplete-option {
+        padding: 0.5rem 0.75rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    .column-autocomplete-option:hover {
+        background: var(--accent-primary);
+        color: white;
+    }
+    
+    .column-autocomplete-option.selected {
+        background: rgba(99, 102, 241, 0.1);
+    }
+    
+    .column-autocomplete-option.selected:hover {
+        background: var(--accent-primary);
+    }
+    
+    .column-autocomplete-option-check {
+        width: 16px;
+        text-align: center;
+        font-weight: bold;
+    }
+    
+    .column-autocomplete-option-label {
+        flex: 1;
+    }
+    
+    .column-autocomplete-option-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        font-style: italic;
+    }
+    
+    .column-autocomplete-option:hover .column-autocomplete-option-hint {
+        color: rgba(255,255,255,0.7);
+    }
+    
+    .column-autocomplete-no-results {
+        padding: 0.75rem;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
+    .column-derived {
+        border-left: 3px solid var(--success);
+    }
+    
+    .formula-operator {
+        font-size: 1.2rem;
+        font-weight: 600;
+        color: var(--accent-secondary);
+        padding: 0 0.25rem;
+    }
+    
+    .formula-label {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+        white-space: nowrap;
+    }
+    
+    .operand-group {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem;
+        background: var(--bg-secondary);
+        border-radius: 6px;
+        border: 1px dashed var(--border-color);
+    }
+    
+    .operand-group .operand-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    
+    /* Formula Preview */
+    .formula-preview {
+        margin-top: 1rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-primary);
+        border: 1px solid var(--accent-primary);
+        border-radius: 8px;
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.95rem;
+        color: var(--accent-primary);
+    }
+    
+    .formula-preview-label {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        font-family: inherit;
+        margin-bottom: 0.25rem;
+        display: block;
+    }
+    
+    /* Add button */
+    .add-column-btn {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 1rem;
+        background: transparent;
+        border: 2px dashed var(--border-color);
+        border-radius: 12px;
+        color: var(--text-muted);
+        cursor: pointer;
+        transition: all 0.2s ease;
+        width: 100%;
+    }
+    
+    .add-column-btn:hover {
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+        background: rgba(99, 102, 241, 0.05);
+    }
+    
+    /* Validation errors */
+    .validation-errors {
+        background: rgba(239, 68, 68, 0.1);
+        border: 1px solid var(--error);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1rem;
+    }
+    
+    .validation-errors h4 {
+        color: var(--error);
+        margin-bottom: 0.75rem;
+        font-size: 0.95rem;
+    }
+    
+    .validation-error-item {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+        font-size: 0.9rem;
+    }
+    
+    .error-code {
+        font-family: 'JetBrains Mono', monospace;
+        color: var(--error);
+        font-weight: 600;
+    }
+    
+    /* Results section */
+    .results-summary {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+    }
+    
+    .result-stat {
+        text-align: center;
+        padding: 1rem;
+        background: var(--bg-secondary);
+        border-radius: 8px;
+    }
+    
+    .result-stat .value {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: var(--accent-primary);
+    }
+    
+    .result-stat .label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-top: 0.25rem;
+    }
+    
+    /* Preview table */
+    .preview-table-container {
+        overflow-x: auto;
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        margin-top: 1rem;
+    }
+    
+    .preview-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+    }
+    
+    .preview-table th {
+        background: var(--bg-secondary);
+        padding: 0.75rem 1rem;
+        text-align: left;
+        font-weight: 600;
+        border-bottom: 1px solid var(--border-color);
+        white-space: nowrap;
+    }
+    
+    .preview-table th.new-column {
+        background: rgba(99, 102, 241, 0.1);
+        color: var(--accent-primary);
+    }
+    
+    .preview-table td {
+        padding: 0.6rem 1rem;
+        border-bottom: 1px solid var(--border-color);
+        white-space: nowrap;
+    }
+    
+    .preview-table tr:last-child td {
+        border-bottom: none;
+    }
+    
+    .preview-table tr:hover td {
+        background: var(--bg-secondary);
+    }
+    
+    .cell-error {
+        color: var(--error);
+        font-family: 'JetBrains Mono', monospace;
+        font-size: 0.85rem;
+    }
+    
+    /* Loading overlay */
+    .loading-overlay {
+        position: fixed;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        background: rgba(0, 0, 0, 0.7);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 1000;
+    }
+    
+    .loading-content {
+        text-align: center;
+        color: white;
+    }
+    
+    .loading-spinner {
+        width: 48px;
+        height: 48px;
+        border: 4px solid rgba(255, 255, 255, 0.2);
+        border-top-color: var(--accent-primary);
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin: 0 auto 1rem;
+    }
+    
+    @keyframes spin {
+        to { transform: rotate(360deg); }
+    }
+    
+    /* Sample preview section */
+    .sample-preview {
+        background: rgba(34, 197, 94, 0.05);
+        border: 1px solid var(--success);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 1.5rem;
+    }
+    
+    .sample-preview h4 {
+        color: var(--success);
+        margin-bottom: 0.75rem;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    
+    /* Function categories */
+    .function-categories {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-bottom: 1rem;
+    }
+    
+    .function-category-btn {
+        padding: 0.4rem 0.8rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        font-size: 0.8rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .function-category-btn:hover,
+    .function-category-btn.active {
+        background: var(--accent-primary);
+        border-color: var(--accent-primary);
+        color: white;
+    }
+    
+    /* Autocomplete */
+    .autocomplete-container {
+        position: relative;
+    }
+    
+    .autocomplete-dropdown {
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        z-index: 100;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+        display: none;
+    }
+    
+    .autocomplete-dropdown.show {
+        display: block;
+    }
+    
+    .autocomplete-item {
+        padding: 0.5rem 0.75rem;
+        cursor: pointer;
+        font-size: 0.9rem;
+    }
+    
+    .autocomplete-item:hover {
+        background: var(--accent-primary);
+        color: white;
+    }
+    
+    .autocomplete-item .item-hint {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-left: 0.5rem;
+    }
+    
+    .autocomplete-item:hover .item-hint {
+        color: rgba(255,255,255,0.7);
+    }
+    
+    /* Condition builder for IF */
+    .condition-builder {
+        background: var(--bg-primary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        padding: 1rem;
+        margin-top: 0.75rem;
+    }
+    
+    .condition-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        flex-wrap: wrap;
+    }
+    
+    .condition-label {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        min-width: 80px;
+    }
+    
+    .value-input {
+        padding: 0.4rem 0.6rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 4px;
+        color: var(--text-primary);
+        font-size: 0.9rem;
+        width: 100px;
+    }
+</style>
+
+<header class="formula-header">
+    <h1>🧮 Formula Columns</h1>
+    <p>Create calculated columns using a guided formula builder</p>
+</header>
+
+<!-- Navigation -->
+<div class="nav-links">
+    <a href="/" class="btn btn-secondary">📊 Excel Aggregator</a>
+    <a href="/merge/" class="btn btn-secondary">🔗 Excel Merge Tool</a>
+    <a href="/myntra/" class="btn btn-secondary">🛍️ Myntra Scraper</a>
+</div>
+
+<!-- Error Container -->
+<div id="error-container" class="alert alert-error hidden">
+    <span>⚠️</span>
+    <span id="error-message"></span>
+</div>
+
+<!-- Step 1: Upload Excel Files (Multiple) -->
+<div class="card" id="upload-card">
+    <div class="card-title">
+        <span class="step-number">1</span>
+        Upload Excel Files
+    </div>
+    
+    <p class="section-label" style="margin-bottom: 1rem;">
+        Upload one or more Excel files. Each file can have multiple sheets.
+    </p>
+    
+    <!-- Uploaded Files List -->
+    <div id="uploaded-files-container">
+        <!-- Uploaded files will be shown here -->
+    </div>
+    
+    <!-- Add File Button/Zone -->
+    <div class="upload-zone" id="upload-zone">
+        <div class="icon">📁</div>
+        <h3>Drop Excel file here</h3>
+        <p>or click to browse • Supports .xlsx, .xls, .csv</p>
+        <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+    </div>
+    
+    <button class="btn btn-secondary" id="add-more-files-btn" style="margin-top: 1rem; display: none;">
+        ➕ Add Another File
+    </button>
+</div>
+
+<!-- Step 2: Define Formula Columns -->
+<div class="card hidden" id="formulas-card">
+    <div class="card-title">
+        <span class="step-number">2</span>
+        Build Formula Columns
+    </div>
+    
+    <p class="section-label">
+        Create calculated columns by selecting functions and columns from dropdowns. 
+        No syntax errors possible!
+    </p>
+    
+    <div class="column-definitions" id="column-definitions">
+        <!-- Column definitions will be added dynamically -->
+    </div>
+    
+    <button class="add-column-btn" id="add-column-btn">
+        <span>➕</span> Add Formula Column
+    </button>
+    
+    <div id="validation-errors" class="validation-errors hidden">
+        <h4>⚠️ Errors</h4>
+        <div id="validation-error-list"></div>
+    </div>
+    
+    <!-- Sample Preview -->
+    <div id="sample-preview" class="sample-preview hidden">
+        <h4>✅ Preview - Results</h4>
+        <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1rem;">
+            Sample output showing first 10 rows.
+        </p>
+        <div class="preview-table-container">
+            <table class="preview-table">
+                <thead id="sample-thead"></thead>
+                <tbody id="sample-tbody"></tbody>
+            </table>
+        </div>
+        <div class="results-summary" style="margin-top: 1rem;">
+            <div class="result-stat">
+                <div class="value" id="preview-rows">0</div>
+                <div class="label">Total Rows</div>
+            </div>
+            <div class="result-stat">
+                <div class="value" id="preview-columns">0</div>
+                <div class="label">New Columns</div>
+            </div>
+            <div class="result-stat">
+                <div class="value" id="preview-errors">0</div>
+                <div class="label">Cell Errors</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Step 3: Actions -->
+<div class="card hidden" id="execute-card">
+    <div class="card-title">
+        <span class="step-number">3</span>
+        Generate Results
+    </div>
+    
+    <div class="btn-group">
+        <button class="btn btn-secondary" id="preview-btn">👁️ Preview Results</button>
+        <a class="btn btn-primary hidden" id="download-btn" href="#" download="formula_result.xlsx">
+            📥 Download Excel
+        </a>
+        <button class="btn btn-secondary" id="reset-btn">🔄 Start Over</button>
+    </div>
+</div>
+
+<!-- Loading Overlay -->
+<div id="loading-overlay" class="loading-overlay hidden">
+    <div class="loading-content">
+        <div class="loading-spinner"></div>
+        <p id="loading-message">Processing formulas...</p>
+    </div>
+</div>
+
+<script>
+    const csrfToken = '{{ csrf_token }}';
+    
+    // Available functions
+    const FUNCTIONS = {
+        'Arithmetic': [
+            { value: 'add', label: 'Add (+)', symbol: '+', operands: 2 },
+            { value: 'subtract', label: 'Subtract (−)', symbol: '-', operands: 2 },
+            { value: 'multiply', label: 'Multiply (×)', symbol: '*', operands: 2 },
+            { value: 'divide', label: 'Divide (÷)', symbol: '/', operands: 2 },
+            { value: 'mod', label: 'Modulo (%)', symbol: '%', operands: 2 },
+            { value: 'power', label: 'Power (^)', symbol: '**', operands: 2 },
+        ],
+        'Math': [
+            { value: 'abs', label: 'ABS', formula: 'ABS({0})', operands: 1 },
+            { value: 'round', label: 'ROUND', formula: 'ROUND({0}, {1})', operands: 2, secondIsNumber: true },
+            { value: 'floor', label: 'FLOOR', formula: 'FLOOR({0})', operands: 1 },
+            { value: 'ceiling', label: 'CEILING', formula: 'CEILING({0})', operands: 1 },
+            { value: 'sqrt', label: 'SQRT', formula: 'SQRT({0})', operands: 1 },
+        ],
+        'Comparison': [
+            { value: 'gt', label: 'Greater Than (>)', symbol: '>', operands: 2, returns: 'boolean' },
+            { value: 'lt', label: 'Less Than (<)', symbol: '<', operands: 2, returns: 'boolean' },
+            { value: 'gte', label: 'Greater or Equal (>=)', symbol: '>=', operands: 2, returns: 'boolean' },
+            { value: 'lte', label: 'Less or Equal (<=)', symbol: '<=', operands: 2, returns: 'boolean' },
+            { value: 'eq', label: 'Equals (=)', symbol: '==', operands: 2, returns: 'boolean' },
+            { value: 'neq', label: 'Not Equals (≠)', symbol: '!=', operands: 2, returns: 'boolean' },
+        ],
+        'Conditional': [
+            { value: 'if', label: 'IF (condition)', operands: 'if', returns: 'conditional' },
+        ],
+        'Aggregation': [
+            { value: 'sum', label: 'SUM', formula: 'SUM({cols})', operands: 'multi' },
+            { value: 'average', label: 'AVERAGE', formula: 'AVERAGE({cols})', operands: 'multi' },
+            { value: 'max', label: 'MAX', formula: 'MAX({cols})', operands: 'multi' },
+            { value: 'min', label: 'MIN', formula: 'MIN({cols})', operands: 'multi' },
+        ],
+        'Text': [
+            { value: 'concat', label: 'CONCAT', formula: 'CONCAT({cols})', operands: 'multi' },
+            { value: 'concatenate', label: 'CONCATENATE', formula: 'CONCATENATE({cols})', operands: 'multi' },
+            { value: 'left', label: 'LEFT', formula: 'LEFT({0}, {1})', operands: 2, secondIsNumber: true },
+            { value: 'right', label: 'RIGHT', formula: 'RIGHT({0}, {1})', operands: 2, secondIsNumber: true },
+            { value: 'mid', label: 'MID', formula: 'MID({0}, {1}, {2})', operands: 'mid' },
+            { value: 'len', label: 'LEN', formula: 'LEN({0})', operands: 1 },
+            { value: 'upper', label: 'UPPER', formula: 'UPPER({0})', operands: 1 },
+            { value: 'lower', label: 'LOWER', formula: 'LOWER({0})', operands: 1 },
+            { value: 'trim', label: 'TRIM', formula: 'TRIM({0})', operands: 1 },
+            { value: 'text', label: 'TEXT', formula: 'TEXT({0}, "{1}")', operands: 'text' },
+            { value: 'substitute', label: 'SUBSTITUTE', formula: 'SUBSTITUTE({0}, "{1}", "{2}")', operands: 'substitute' },
+            { value: 'find', label: 'FIND', formula: 'FIND("{0}", {1})', operands: 'find' },
+        ],
+    };
+    
+    // State - Multi-file support
+    let uploadedFiles = {}; // { fileId: { id, name, sheets: { sheetName: { columns, row_count } } } }
+    let sheets = {}; // Flattened view: { "File1.Sheet1": { columns, ... }, ... }
+    let columnDefinitions = [];
+    let resultFileData = null;
+    let resultFilename = null;
+    
+    // DOM elements
+    const uploadZone = document.getElementById('upload-zone');
+    const fileInput = document.getElementById('file-input');
+    const uploadedFilesContainer = document.getElementById('uploaded-files-container');
+    const addMoreFilesBtn = document.getElementById('add-more-files-btn');
+    const errorContainer = document.getElementById('error-container');
+    const errorMessage = document.getElementById('error-message');
+    
+    const formulasCard = document.getElementById('formulas-card');
+    const columnDefsContainer = document.getElementById('column-definitions');
+    const addColumnBtn = document.getElementById('add-column-btn');
+    const validationErrors = document.getElementById('validation-errors');
+    const validationErrorList = document.getElementById('validation-error-list');
+    const samplePreview = document.getElementById('sample-preview');
+    
+    const executeCard = document.getElementById('execute-card');
+    const previewBtn = document.getElementById('preview-btn');
+    const downloadBtn = document.getElementById('download-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    
+    const loadingOverlay = document.getElementById('loading-overlay');
+    const loadingMessage = document.getElementById('loading-message');
+    
+    // Utility functions
+    function showError(message) {
+        errorMessage.textContent = message;
+        errorContainer.classList.remove('hidden');
+    }
+    
+    function hideError() {
+        errorContainer.classList.add('hidden');
+    }
+    
+    function showLoading(message = 'Processing...') {
+        loadingMessage.textContent = message;
+        loadingOverlay.classList.remove('hidden');
+    }
+    
+    function hideLoading() {
+        loadingOverlay.classList.add('hidden');
+    }
+    
+    function escapeHtml(text) {
+        const div = document.createElement('div');
+        div.textContent = String(text);
+        return div.innerHTML;
+    }
+    
+    // Track derived columns (columns created by formulas)
+    let derivedColumns = new Set();
+    
+    // Get all available columns (original + derived)
+    // sheetKey format: "FileLabel.SheetName" (e.g., "File1.Sheet1")
+    function getAvailableColumns(sheetKey) {
+        // Normalize sheet key (trim whitespace)
+        const normalizedKey = sheetKey ? String(sheetKey).trim() : '';
+        
+        if (!normalizedKey || !sheets) {
+            console.warn('getAvailableColumns: Invalid sheetKey or sheets:', normalizedKey, 'Available sheets:', Object.keys(sheets || {}));
+            return [];
+        }
+        
+        // Try exact match first
+        let sheetData = sheets[normalizedKey];
+        
+        // If not found, try case-insensitive match
+        if (!sheetData) {
+            const sheetKeys = Object.keys(sheets);
+            const matchedKey = sheetKeys.find(key => key.toLowerCase() === normalizedKey.toLowerCase());
+            if (matchedKey) {
+                sheetData = sheets[matchedKey];
+            }
+        }
+        
+        if (!sheetData) {
+            console.warn('getAvailableColumns: Sheet not found:', normalizedKey, 'Available sheets:', Object.keys(sheets));
+            return [];
+        }
+        
+        if (!sheetData.columns || !Array.isArray(sheetData.columns)) {
+            console.warn('getAvailableColumns: Invalid columns data for sheet:', normalizedKey, sheetData);
+            return [];
+        }
+        
+        // Process columns: ensure they are strings and filter out invalid ones
+        const originalCols = sheetData.columns
+            .map(col => {
+                // Convert to string and clean
+                const colStr = String(col || '').trim();
+                return colStr;
+            })
+            .filter(colStr => {
+                // Filter out empty, unnamed columns, but keep valid renamed columns (like "Column.1")
+                // Only filter out if it's purely a dot followed by numbers with no prefix
+                return colStr && 
+                       colStr !== '' && 
+                       !colStr.startsWith('Unnamed') && 
+                       colStr.length > 0 &&
+                       !(/^\.\d+$/.test(colStr)); // Filter out pure patterns like ".1", ".2" but keep "Column.1"
+            });
+        
+        // Add derived columns
+        const allCols = [...originalCols, ...Array.from(derivedColumns)];
+        
+        // Return unique columns with metadata
+        const seen = new Set();
+        return allCols
+            .map(col => {
+                const colStr = String(col).trim();
+                return colStr;
+            })
+            .filter(colStr => {
+                if (seen.has(colStr) || !colStr) return false;
+                seen.add(colStr);
+                return true;
+            })
+            .map(colStr => ({
+                name: colStr,
+                isDerived: derivedColumns.has(colStr),
+                sheet: normalizedKey
+            }));
+    }
+    
+    // Autocomplete Class (single select) - Simplified version
+    class ColumnAutocomplete {
+        constructor(container, sheetName, selectedValue, onChange, sheetSelector = null) {
+            this.container = container;
+            this.sheetName = sheetName;
+            this.selectedValue = selectedValue || '';
+            this.onChange = onChange;
+            this.sheetSelector = sheetSelector;
+            this.options = [];
+            this.isOpen = false;
+            
+            // Ensure container has relative positioning
+            this.container.style.position = 'relative';
+            
+            this.render();
+            this.bindEvents();
+        }
+        
+        // Get the current sheet name - prioritize stored sheetName if valid
+        getSheetName() {
+            // If we have a stored sheetName and it exists in the sheets object, use it
+            if (this.sheetName && sheets && sheets[this.sheetName]) {
+                return this.sheetName;
+            }
+            // Try to get from selector if available
+            if (this.sheetSelector && this.sheetSelector.value) {
+                return this.sheetSelector.value;
+            }
+            // Fallback to stored sheetName even if not in sheets (in case sheets not loaded yet)
+            return this.sheetName || Object.keys(sheets || {})[0] || '';
+        }
+        
+        render() {
+            const currentSheet = this.getSheetName();
+            this.options = getAvailableColumns(currentSheet);
+            
+            this.container.innerHTML = `
+                <div class="column-autocomplete-wrapper">
+                    ${this.selectedValue ? `
+                        <span class="column-autocomplete-tag">
+                            ${escapeHtml(this.selectedValue)}
+                            <button type="button" class="column-autocomplete-tag-remove">×</button>
+                        </span>
+                    ` : ''}
+                    <input type="text" class="column-autocomplete-input" placeholder="Search column..." autocomplete="off">
+                </div>
+                <div class="column-autocomplete-dropdown"></div>
+            `;
+            
+            this.wrapper = this.container.querySelector('.column-autocomplete-wrapper');
+            this.input = this.container.querySelector('.column-autocomplete-input');
+            this.dropdown = this.container.querySelector('.column-autocomplete-dropdown');
+            
+            // Pre-render the dropdown content (hidden)
+            this.updateDropdownContent('');
+        }
+        
+        updateDropdownContent(filter = '') {
+            const currentSheet = this.getSheetName();
+            this.options = getAvailableColumns(currentSheet);
+            
+            const filterLower = filter.toLowerCase();
+            const filtered = this.options.filter(opt => {
+                const name = String(opt.name || '');
+                return name && name.toLowerCase().includes(filterLower);
+            });
+            
+            if (filtered.length === 0) {
+                this.dropdown.innerHTML = `<div class="column-autocomplete-no-results">No columns found</div>`;
+                return;
+            }
+            
+            this.dropdown.innerHTML = filtered.map(opt => {
+                const name = String(opt.name || '');
+                const isSelected = name === this.selectedValue;
+                return `
+                    <div class="column-autocomplete-option ${isSelected ? 'selected' : ''} ${opt.isDerived ? 'column-derived' : ''}" data-value="${escapeHtml(name)}">
+                        <span class="column-autocomplete-option-check">${isSelected ? '✓' : ''}</span>
+                        <span class="column-autocomplete-option-label">${escapeHtml(name)}</span>
+                        ${opt.isDerived ? '<span class="column-autocomplete-option-hint">(derived)</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        bindEvents() {
+            // Click on wrapper opens dropdown
+            this.wrapper.addEventListener('click', (e) => {
+                if (e.target.classList.contains('column-autocomplete-tag-remove')) {
+                    return;
+                }
+                this.input.focus();
+            });
+            
+            // Focus on input opens dropdown
+            this.input.addEventListener('focus', () => {
+                this.showDropdown();
+            });
+            
+            // Typing filters options
+            this.input.addEventListener('input', (e) => {
+                this.updateDropdownContent(e.target.value);
+                this.showDropdown();
+            });
+            
+            // Keyboard navigation
+            this.input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.hideDropdown();
+                } else if (e.key === 'Enter') {
+                    const firstOption = this.dropdown.querySelector('.column-autocomplete-option');
+                    if (firstOption) {
+                        this.selectValue(firstOption.dataset.value);
+                    }
+                }
+            });
+            
+            // Click on option selects it
+            this.dropdown.addEventListener('click', (e) => {
+                const option = e.target.closest('.column-autocomplete-option');
+                if (option && option.dataset.value) {
+                    this.selectValue(option.dataset.value);
+                }
+            });
+            
+            // Click on remove button clears selection
+            this.container.addEventListener('click', (e) => {
+                if (e.target.classList.contains('column-autocomplete-tag-remove')) {
+                    e.stopPropagation();
+                    this.selectValue('');
+                }
+            });
+            
+            // Click outside closes dropdown
+            document.addEventListener('click', (e) => {
+                if (!this.container.contains(e.target)) {
+                    this.hideDropdown();
+                }
+            });
+        }
+        
+        showDropdown() {
+            // Always refresh options when showing
+            this.updateDropdownContent(this.input ? this.input.value : '');
+            
+            // Show dropdown with inline styles to ensure visibility
+            this.dropdown.style.display = 'block';
+            this.dropdown.style.position = 'absolute';
+            this.dropdown.style.top = '100%';
+            this.dropdown.style.left = '0';
+            this.dropdown.style.right = '0';
+            this.dropdown.style.zIndex = '9999';
+            this.dropdown.style.maxHeight = '200px';
+            this.dropdown.style.overflowY = 'auto';
+            this.dropdown.style.background = 'var(--bg-secondary, #1e1e2e)';
+            this.dropdown.style.border = '1px solid var(--border-color, #444)';
+            this.dropdown.style.borderRadius = '6px';
+            this.dropdown.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+            this.dropdown.style.marginTop = '4px';
+            this.dropdown.classList.add('open');
+            this.isOpen = true;
+        }
+        
+        hideDropdown() {
+            this.dropdown.style.display = 'none';
+            this.dropdown.classList.remove('open');
+            this.isOpen = false;
+            if (this.input) {
+                this.input.value = '';
+            }
+        }
+        
+        selectValue(value) {
+            this.selectedValue = value;
+            this.hideDropdown();
+            this.render();
+            this.bindEvents();
+            if (this.onChange) {
+                this.onChange(value);
+            }
+        }
+        
+        // Simple methods to access values
+        getValue() {
+            return this.selectedValue;
+        }
+        
+        setValue(value) {
+            this.selectedValue = value;
+            this.render();
+            this.bindEvents();
+        }
+        
+        // Update when sheet selector changes
+        updateSheet(newSheetName) {
+            this.sheetName = newSheetName;
+            this.selectedValue = ''; // Clear selection when sheet changes
+            
+            // Try to find and update the sheet selector reference from the DOM
+            const operandGroup = this.container.closest('.operand-group');
+            if (operandGroup) {
+                const foundSelector = operandGroup.querySelector('.sheet-select, .sheet1-select, .sheet2-select');
+                if (foundSelector) {
+                    this.sheetSelector = foundSelector;
+                }
+            }
+            
+            this.render();
+            this.bindEvents();
+        }
+        
+        // Legacy method aliases for compatibility
+        open() {
+            this.showDropdown();
+        }
+        
+        close() {
+            this.hideDropdown();
+        }
+        
+        updateOptions(options) {
+            this.options = options;
+            this.updateDropdownContent(this.input ? this.input.value : '');
+        }
+        
+    }
+    
+    // File upload handlers - Multi-file support
+    uploadZone.addEventListener('click', () => fileInput.click());
+    uploadZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        uploadZone.style.borderColor = 'var(--accent-primary)';
+    });
+    uploadZone.addEventListener('dragleave', () => {
+        uploadZone.style.borderColor = 'var(--border-color)';
+    });
+    uploadZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        uploadZone.style.borderColor = 'var(--border-color)';
+        const file = e.dataTransfer.files[0];
+        if (file) handleFileUpload(file);
+    });
+    fileInput.addEventListener('change', (e) => {
+        const file = e.target.files[0];
+        if (file) handleFileUpload(file);
+        fileInput.value = ''; // Reset for same file selection
+    });
+    
+    addMoreFilesBtn.addEventListener('click', () => fileInput.click());
+    
+    async function handleFileUpload(file) {
+        hideError();
+        showLoading('Uploading file...');
+        
+        const formData = new FormData();
+        formData.append('file', file);
+        
+        try {
+            const response = await fetch('/formula/upload/', {
+                method: 'POST',
+                body: formData,
+                headers: {
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                // Generate a short unique identifier for this file
+                const fileLabel = `File${Object.keys(uploadedFiles).length + 1}`;
+                
+                // Store the file
+                uploadedFiles[data.file_id] = {
+                    id: data.file_id,
+                    name: file.name,
+                    label: fileLabel,
+                    sheets: data.sheets
+                };
+                
+                // Update flattened sheets view
+                updateFlattenedSheets();
+                
+                // Update UI
+                displayUploadedFiles();
+                
+                // Show "Add More Files" button and hide initial upload zone after first file
+                addMoreFilesBtn.style.display = 'inline-block';
+                
+                // Show formulas card
+                formulasCard.classList.remove('hidden');
+                executeCard.classList.remove('hidden');
+                
+                // Add initial column definition if none exists
+                if (columnDefinitions.length === 0) {
+                    addColumnDefinition();
+                } else {
+                    // Refresh existing formula definitions to show new file's sheets
+                    refreshAllAutocompletes();
+                }
+                
+            } else {
+                showError(data.error || 'Upload failed');
+            }
+        } catch (error) {
+            showError('Upload failed: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    }
+    
+    function updateFlattenedSheets() {
+        // Build flattened sheets view: { "File1.Sheet1": { columns, ... } }
+        sheets = {};
+        for (const fileId in uploadedFiles) {
+            const fileData = uploadedFiles[fileId];
+            for (const sheetName in fileData.sheets) {
+                const fullKey = `${fileData.label}.${sheetName}`;
+                sheets[fullKey] = {
+                    ...fileData.sheets[sheetName],
+                    fileId: fileId,
+                    fileLabel: fileData.label,
+                    fileName: fileData.name,
+                    sheetName: sheetName
+                };
+            }
+        }
+    }
+    
+    function displayUploadedFiles() {
+        uploadedFilesContainer.innerHTML = '';
+        
+        for (const fileId in uploadedFiles) {
+            const fileData = uploadedFiles[fileId];
+            const card = document.createElement('div');
+            card.className = 'uploaded-file-card';
+            card.dataset.fileId = fileId;
+            
+            const sheetNames = Object.keys(fileData.sheets);
+            const totalRows = sheetNames.reduce((sum, s) => sum + fileData.sheets[s].row_count, 0);
+            const totalCols = sheetNames.reduce((sum, s) => sum + fileData.sheets[s].columns.length, 0);
+            
+            card.innerHTML = `
+                <div class="uploaded-file-header">
+                    <div class="uploaded-file-name">
+                        <span class="file-icon">📄</span>
+                        <span>${escapeHtml(fileData.name)}</span>
+                        <span class="uploaded-file-id">${fileData.label}</span>
+                    </div>
+                    <button class="uploaded-file-remove" data-file-id="${fileId}" title="Remove file">✕</button>
+                </div>
+                <div class="sheets-container">
+                    ${sheetNames.map(sheetName => {
+                        const info = fileData.sheets[sheetName];
+                        return `
+                            <div class="sheet-badge">
+                                <span class="sheet-name">📋 ${escapeHtml(sheetName)}</span>
+                                <span class="count">${info.row_count} rows</span>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `;
+            
+            // Add remove handler
+            card.querySelector('.uploaded-file-remove').addEventListener('click', (e) => {
+                const fid = e.target.dataset.fileId;
+                removeFile(fid);
+            });
+            
+            uploadedFilesContainer.appendChild(card);
+        }
+    }
+    
+    function removeFile(fileId) {
+        delete uploadedFiles[fileId];
+        updateFlattenedSheets();
+        displayUploadedFiles();
+        
+        // If no files left, hide cards
+        if (Object.keys(uploadedFiles).length === 0) {
+            addMoreFilesBtn.style.display = 'none';
+            formulasCard.classList.add('hidden');
+            executeCard.classList.add('hidden');
+            columnDefinitions = [];
+            columnDefsContainer.innerHTML = '';
+        }
+        
+        // Refresh autocomplete instances
+        refreshAllAutocompletes();
+    }
+    
+    function refreshAllAutocompletes() {
+        // Re-render all column definitions to update sheet dropdowns and autocomplete options
+        // First, update target sheet dropdowns
+        columnDefsContainer.querySelectorAll('.column-def').forEach((div, index) => {
+            const def = columnDefinitions.find(d => d.id == div.dataset.id);
+            if (!def) return;
+            
+            // Update target sheet dropdown
+            const targetSheetSelect = div.querySelector('.target-sheet-select');
+            if (targetSheetSelect) {
+                const currentValue = targetSheetSelect.value;
+                targetSheetSelect.innerHTML = generateSheetOptions(currentValue);
+                // If current value is no longer valid, select first available
+                if (!sheets[currentValue] && Object.keys(sheets).length > 0) {
+                    targetSheetSelect.value = Object.keys(sheets)[0];
+                    def.targetSheet = targetSheetSelect.value;
+                }
+            }
+            
+            // Update operand sheet dropdowns
+            div.querySelectorAll('.sheet-select, .sheet1-select, .sheet2-select').forEach(select => {
+                const currentValue = select.value;
+                select.innerHTML = generateSheetOptions(currentValue);
+                if (!sheets[currentValue] && Object.keys(sheets).length > 0) {
+                    select.value = Object.keys(sheets)[0];
+                }
+            });
+            
+            // Update autocomplete instances
+            if (def.column1Autocomplete) {
+                def.column1Autocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+            }
+            if (def.column2Autocomplete) {
+                def.column2Autocomplete.updateSheet(def.operand2.sheet || Object.keys(sheets)[0]);
+            }
+            if (def.trueValueAutocomplete) {
+                def.trueValueAutocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+            }
+            if (def.falseValueAutocomplete) {
+                def.falseValueAutocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+            }
+            if (def.multiAutocompletes && def.multiColumns) {
+                def.multiAutocompletes.forEach((autocomplete, i) => {
+                    if (def.multiColumns[i]) {
+                        autocomplete.updateSheet(def.multiColumns[i].sheet || Object.keys(sheets)[0]);
+                    }
+                });
+            }
+        });
+    }
+    
+    // Get list of files for dropdown
+    function getFileOptions() {
+        return Object.values(uploadedFiles).map(f => ({
+            value: f.label,
+            label: `${f.label} - ${f.name}`,
+            fileId: f.id
+        }));
+    }
+    
+    // Get sheets for a specific file
+    function getSheetsForFile(fileLabel) {
+        const fileData = Object.values(uploadedFiles).find(f => f.label === fileLabel);
+        if (!fileData) return [];
+        return Object.keys(fileData.sheets);
+    }
+    
+    // Get all columns from all files/sheets
+    function getAllColumns() {
+        const columns = [];
+        for (const key in sheets) {
+            const info = sheets[key];
+            for (const col of info.columns) {
+                columns.push({ 
+                    fullKey: key, 
+                    fileLabel: info.fileLabel,
+                    sheet: info.sheetName, 
+                    column: col, 
+                    numeric: info.numeric_columns?.includes(col) || false 
+                });
+            }
+        }
+        return columns;
+    }
+    
+    // Column definition management
+    addColumnBtn.addEventListener('click', () => addColumnDefinition());
+    
+    function addColumnDefinition() {
+        const index = columnDefinitions.length;
+        const defaultSheet = Object.keys(sheets)[0];
+        const def = {
+            id: Date.now(),
+            name: '',
+            targetSheet: defaultSheet, // Sheet where new column will be added
+            functionType: '',
+            operand1: { sheet: defaultSheet, column: '' },
+            operand2: { sheet: defaultSheet, column: '', value: '' },
+            condition: { operator: '>', value: '' },
+            trueValue: '',
+            falseValue: '',
+            concatSeparator: '', // Separator for CONCAT function
+        };
+        columnDefinitions.push(def);
+        renderColumnDefinition(def, index);
+    }
+    
+    // Generate readable sheet options (File1 > Sheet1 format)
+    function generateSheetOptions(selectedValue = '') {
+        return Object.keys(sheets).map(key => {
+            const info = sheets[key];
+            const label = info.fileLabel && info.sheetName 
+                ? `${info.fileLabel} → ${info.sheetName}`
+                : key;
+            const isSelected = key === selectedValue ? 'selected' : '';
+            return `<option value="${escapeHtml(key)}" ${isSelected}>${escapeHtml(label)}</option>`;
+        }).join('');
+    }
+    
+    function renderColumnDefinition(def, index) {
+        const div = document.createElement('div');
+        div.className = 'column-def';
+        div.dataset.id = def.id;
+        
+        const sheetOptions = generateSheetOptions(def.targetSheet);
+        
+        div.innerHTML = `
+            <div class="column-def-header">
+                <div class="column-def-number">${index + 1}</div>
+                <button class="column-def-remove" title="Remove">✕</button>
+            </div>
+            
+            <div class="field-group">
+                <label class="field-label">New Column Name</label>
+                <input type="text" class="field-input column-name" placeholder="e.g., total_salary, ctr, profit_margin" value="${escapeHtml(def.name)}">
+            </div>
+            
+            <div class="field-group">
+                <label class="field-label">Add Column To (File → Sheet)</label>
+                <select class="formula-select target-sheet-select">
+                    ${generateSheetOptions(def.targetSheet)}
+                </select>
+            </div>
+            
+            <div class="formula-builder">
+                <div class="formula-row">
+                    <span class="formula-label">Function:</span>
+                    <select class="formula-select function-select">
+                        <option value="">Select function...</option>
+                        ${Object.entries(FUNCTIONS).map(([category, funcs]) => `
+                            <optgroup label="${category}">
+                                ${funcs.map(f => `<option value="${f.value}">${f.label}</option>`).join('')}
+                            </optgroup>
+                        `).join('')}
+                    </select>
+                </div>
+                
+                <div class="operands-container">
+                    <!-- Operands will be rendered based on selected function -->
+                </div>
+                
+                <div class="formula-preview hidden">
+                    <span class="formula-preview-label">Generated Formula:</span>
+                    <span class="formula-text">=</span>
+                </div>
+            </div>
+        `;
+        
+        // Event listeners
+        const removeBtn = div.querySelector('.column-def-remove');
+        removeBtn.addEventListener('click', () => removeColumnDefinition(def.id));
+        
+        const nameInput = div.querySelector('.column-name');
+        nameInput.addEventListener('input', (e) => {
+            def.name = e.target.value.trim();
+            updateFormulaPreview(div, def);
+            hideSamplePreview();
+        });
+        
+        const targetSheetSelect = div.querySelector('.target-sheet-select');
+        targetSheetSelect.addEventListener('change', (e) => {
+            def.targetSheet = e.target.value;
+            updateFormulaPreview(div, def);
+            hideSamplePreview();
+        });
+        
+        const functionSelect = div.querySelector('.function-select');
+        functionSelect.addEventListener('change', (e) => {
+            def.functionType = e.target.value;
+            renderOperands(div, def);
+            updateFormulaPreview(div, def);
+            hideSamplePreview();
+        });
+        
+        columnDefsContainer.appendChild(div);
+    }
+    
+    function renderOperands(container, def) {
+        const operandsContainer = container.querySelector('.operands-container');
+        operandsContainer.innerHTML = '';
+        
+        if (!def.functionType) return;
+        
+        // Find the function config
+        let funcConfig = null;
+        for (const funcs of Object.values(FUNCTIONS)) {
+            funcConfig = funcs.find(f => f.value === def.functionType);
+            if (funcConfig) break;
+        }
+        
+        if (!funcConfig) return;
+        
+        const sheetOptions = generateSheetOptions(def.operand1.sheet);
+        
+        if (funcConfig.operands === 2 || funcConfig.operands === 1) {
+            // Binary or unary operation
+            let html = `
+                <div class="formula-row">
+                    <div class="operand-group">
+                        <span class="operand-label">Column 1:</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+            `;
+            
+            if (funcConfig.operands === 2) {
+                if (funcConfig.secondIsNumber) {
+                    html += `
+                        <span class="formula-operator">,</span>
+                        <div class="operand-group">
+                            <span class="operand-label">Value:</span>
+                            <input type="number" class="value-input operand2-value" placeholder="0" value="${def.operand2.value}">
+                        </div>
+                    `;
+                } else {
+                    const sheet2Options = Object.keys(sheets).map(s => 
+                        `<option value="${escapeHtml(s)}" ${s === def.operand2.sheet ? 'selected' : ''}>${escapeHtml(s)}</option>`
+                    ).join('');
+                    html += `
+                        <span class="formula-operator">${funcConfig.symbol || ','}</span>
+                        <div class="operand-group">
+                            <span class="operand-label">Column 2:</span>
+                            <select class="formula-select sheet-select sheet2-select">${sheet2Options}</select>
+                            <div class="column-autocomplete column2-autocomplete"></div>
+                        </div>
+                    `;
+                }
+            }
+            
+            html += `</div>`;
+            operandsContainer.innerHTML = html;
+            
+            // Setup autocomplete for column 1
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                def.column1Autocomplete.setValue('');
+                def.operand1.column = '';
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            if (funcConfig.operands === 2 && !funcConfig.secondIsNumber) {
+                const sheet2Select = operandsContainer.querySelector('.sheet2-select');
+                const column2Container = operandsContainer.querySelector('.column2-autocomplete');
+                def.column2Autocomplete = new ColumnAutocomplete(
+                    column2Container,
+                    sheet2Select.value,
+                    def.operand2.column,
+                    (value) => {
+                        def.operand2.column = value;
+                        updateFormulaPreview(container, def);
+                        hideSamplePreview();
+                    },
+                    sheet2Select // Pass sheet selector reference
+                );
+                
+                sheet2Select.addEventListener('change', () => {
+                    def.operand2.sheet = sheet2Select.value;
+                    def.column2Autocomplete.updateSheet(sheet2Select.value);
+                    def.column2Autocomplete.setValue('');
+                    def.operand2.column = '';
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                });
+            } else if (funcConfig.secondIsNumber) {
+                const valueInput = operandsContainer.querySelector('.operand2-value');
+                valueInput.addEventListener('input', () => {
+                    def.operand2.value = valueInput.value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                });
+            }
+            
+        } else if (funcConfig.operands === 'if') {
+            // IF condition builder
+            const html = `
+                <div class="condition-builder">
+                    <div class="condition-row" style="margin-bottom: 0.75rem;">
+                        <span class="condition-label">IF</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                        <select class="formula-select condition-operator" style="min-width: 80px;">
+                            <option value=">">&gt; Greater than</option>
+                            <option value="<">&lt; Less than</option>
+                            <option value=">=">&gt;= Greater or equal</option>
+                            <option value="<=">&lt;= Less or equal</option>
+                            <option value="==">= Equals</option>
+                            <option value="!=">≠ Not equals</option>
+                        </select>
+                        <input type="text" class="value-input condition-value" placeholder="Value" value="${def.condition.value}">
+                    </div>
+                    <div class="condition-row" style="margin-bottom: 0.5rem;">
+                        <span class="condition-label">THEN:</span>
+                        <div class="column-autocomplete true-value-autocomplete" style="flex: 1; max-width: 200px;"></div>
+                    </div>
+                    <div class="condition-row">
+                        <span class="condition-label">ELSE:</span>
+                        <div class="column-autocomplete false-value-autocomplete" style="flex: 1; max-width: 200px;"></div>
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const conditionOperator = operandsContainer.querySelector('.condition-operator');
+            const conditionValue = operandsContainer.querySelector('.condition-value');
+            const trueValueContainer = operandsContainer.querySelector('.true-value-autocomplete');
+            const falseValueContainer = operandsContainer.querySelector('.false-value-autocomplete');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            // For THEN/ELSE, allow both column names and values
+            def.trueValueAutocomplete = new ColumnAutocomplete(
+                trueValueContainer,
+                sheet1Select.value,
+                def.trueValue,
+                (value) => {
+                    def.trueValue = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            def.falseValueAutocomplete = new ColumnAutocomplete(
+                falseValueContainer,
+                sheet1Select.value,
+                def.falseValue,
+                (value) => {
+                    def.falseValue = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                def.trueValueAutocomplete.updateSheet(sheet1Select.value);
+                def.falseValueAutocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            conditionOperator.addEventListener('change', () => {
+                def.condition.operator = conditionOperator.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            conditionValue.addEventListener('input', () => {
+                def.condition.value = conditionValue.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'multi') {
+            // Multi-column aggregation (SUM, AVERAGE, etc.) or CONCAT
+            const isConcat = funcConfig.value === 'concat' || funcConfig.value === 'concatenate';
+            if (!def.concatSeparator) {
+                def.concatSeparator = '';
+            }
+            
+            let html = `
+                <div class="formula-row">
+                    <span class="formula-label">Columns to ${funcConfig.label.toLowerCase()}:</span>
+                </div>
+                <div class="multi-columns-container">
+                    <div class="formula-row multi-column-row">
+                        <select class="formula-select sheet-select">${sheetOptions}</select>
+                        <div class="column-autocomplete multi-column-autocomplete"></div>
+                        <button type="button" class="btn btn-secondary btn-sm add-multi-col">+</button>
+                    </div>
+                </div>
+            `;
+            
+            // Add separator input for CONCAT function
+            if (isConcat) {
+                html += `
+                    <div class="formula-row" style="margin-top: 0.75rem;">
+                        <div class="operand-group">
+                            <span class="operand-label">Separator (optional):</span>
+                            <input type="text" class="value-input concat-separator" placeholder='e.g., " ", "-", ", "' value="${escapeHtml(def.concatSeparator)}" style="width: 200px;">
+                            <span class="operand-hint" style="font-size: 0.8rem; color: var(--text-muted); margin-left: 0.5rem;">Leave empty for no separator</span>
+                        </div>
+                    </div>
+                `;
+            }
+            
+            operandsContainer.innerHTML = html;
+            
+            // Initialize multi-column state
+            if (!def.multiColumns || def.multiColumns.length === 0) {
+                def.multiColumns = [{ sheet: Object.keys(sheets)[0] || '', column: '' }];
+            }
+            
+            const multiContainer = operandsContainer.querySelector('.multi-columns-container');
+            
+            function renderMultiColumns() {
+                multiContainer.innerHTML = def.multiColumns.map((mc, i) => `
+                    <div class="formula-row multi-column-row" data-index="${i}">
+                        <select class="formula-select sheet-select">
+                            ${generateSheetOptions(mc.sheet)}
+                        </select>
+                        <div class="column-autocomplete multi-column-autocomplete"></div>
+                        ${i === 0 ? 
+                            '<button type="button" class="btn btn-secondary btn-sm add-multi-col">+</button>' : 
+                            '<button type="button" class="btn btn-secondary btn-sm remove-multi-col">−</button>'
+                        }
+                    </div>
+                `).join('');
+                
+                // Setup event listeners
+                if (!def.multiAutocompletes) {
+                    def.multiAutocompletes = [];
+                }
+                def.multiAutocompletes = [];
+                
+                multiContainer.querySelectorAll('.multi-column-row').forEach((row, i) => {
+                    const sheetSelect = row.querySelector('.sheet-select');
+                    const columnContainer = row.querySelector('.multi-column-autocomplete');
+                    
+                    const autocomplete = new ColumnAutocomplete(
+                        columnContainer,
+                        sheetSelect.value,
+                        def.multiColumns[i].column,
+                        (value) => {
+                            def.multiColumns[i].column = value;
+                            updateFormulaPreview(container, def);
+                            hideSamplePreview();
+                        },
+                        sheetSelect // Pass sheet selector reference
+                    );
+                    def.multiAutocompletes.push(autocomplete);
+                    
+                    sheetSelect.addEventListener('change', () => {
+                        def.multiColumns[i].sheet = sheetSelect.value;
+                        autocomplete.updateSheet(sheetSelect.value);
+                        autocomplete.setValue('');
+                        def.multiColumns[i].column = '';
+                        updateFormulaPreview(container, def);
+                        hideSamplePreview();
+                    });
+                    
+                    const addBtn = row.querySelector('.add-multi-col');
+                    if (addBtn) {
+                        addBtn.addEventListener('click', () => {
+                            def.multiColumns.push({ sheet: Object.keys(sheets)[0], column: '' });
+                            renderMultiColumns();
+                        });
+                    }
+                    
+                    const removeBtn = row.querySelector('.remove-multi-col');
+                    if (removeBtn) {
+                        removeBtn.addEventListener('click', () => {
+                            def.multiColumns.splice(i, 1);
+                            def.multiAutocompletes.splice(i, 1);
+                            renderMultiColumns();
+                            updateFormulaPreview(container, def);
+                            hideSamplePreview();
+                        });
+                    }
+                });
+            }
+            
+            renderMultiColumns();
+            
+            // Add separator input event listener for CONCAT
+            if (isConcat) {
+                const separatorInput = operandsContainer.querySelector('.concat-separator');
+                if (separatorInput) {
+                    separatorInput.addEventListener('input', (e) => {
+                        def.concatSeparator = e.target.value;
+                        updateFormulaPreview(container, def);
+                        hideSamplePreview();
+                    });
+                }
+            }
+        } else if (funcConfig.operands === 'mid') {
+            // MID function: column, start, length
+            if (!def.midParams) {
+                def.midParams = { start: '1', length: '1' };
+            }
+            const html = `
+                <div class="formula-row">
+                    <div class="operand-group">
+                        <span class="operand-label">Column:</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                    <span class="formula-operator">,</span>
+                    <div class="operand-group">
+                        <span class="operand-label">Start:</span>
+                        <input type="number" class="value-input mid-start" placeholder="1" value="${def.midParams.start}" min="1">
+                    </div>
+                    <span class="formula-operator">,</span>
+                    <div class="operand-group">
+                        <span class="operand-label">Length:</span>
+                        <input type="number" class="value-input mid-length" placeholder="1" value="${def.midParams.length}" min="1">
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const startInput = operandsContainer.querySelector('.mid-start');
+            const lengthInput = operandsContainer.querySelector('.mid-length');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            startInput.addEventListener('input', () => {
+                def.midParams.start = startInput.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            lengthInput.addEventListener('input', () => {
+                def.midParams.length = lengthInput.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'text') {
+            // TEXT function: column, format
+            if (!def.textFormat) {
+                def.textFormat = '';
+            }
+            const html = `
+                <div class="formula-row">
+                    <div class="operand-group">
+                        <span class="operand-label">Column:</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                    <span class="formula-operator">,</span>
+                    <div class="operand-group">
+                        <span class="operand-label">Format:</span>
+                        <input type="text" class="value-input text-format" placeholder='e.g., "0.00", "MM/DD/YYYY"' value="${def.textFormat}" style="width: 200px;">
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const formatInput = operandsContainer.querySelector('.text-format');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            formatInput.addEventListener('input', () => {
+                def.textFormat = formatInput.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'substitute') {
+            // SUBSTITUTE function: column, old text, new text
+            if (!def.substituteParams) {
+                def.substituteParams = { oldText: '', newText: '' };
+            }
+            const html = `
+                <div class="formula-row">
+                    <div class="operand-group">
+                        <span class="operand-label">Column:</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                    <span class="formula-operator">,</span>
+                    <div class="operand-group">
+                        <span class="operand-label">Old Text:</span>
+                        <input type="text" class="value-input substitute-old" placeholder="Text to replace" value="${def.substituteParams.oldText}">
+                    </div>
+                    <span class="formula-operator">,</span>
+                    <div class="operand-group">
+                        <span class="operand-label">New Text:</span>
+                        <input type="text" class="value-input substitute-new" placeholder="Replacement text" value="${def.substituteParams.newText}">
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const oldInput = operandsContainer.querySelector('.substitute-old');
+            const newInput = operandsContainer.querySelector('.substitute-new');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            oldInput.addEventListener('input', () => {
+                def.substituteParams.oldText = oldInput.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            newInput.addEventListener('input', () => {
+                def.substituteParams.newText = newInput.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'find') {
+            // FIND function: text to find, column
+            if (!def.findText) {
+                def.findText = '';
+            }
+            const html = `
+                <div class="formula-row">
+                    <div class="operand-group">
+                        <span class="operand-label">Text to Find:</span>
+                        <input type="text" class="value-input find-text" placeholder="Text to search for" value="${def.findText}">
+                    </div>
+                    <span class="formula-operator">,</span>
+                    <div class="operand-group">
+                        <span class="operand-label">Column:</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const findInput = operandsContainer.querySelector('.find-text');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select // Pass sheet selector reference
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            findInput.addEventListener('input', () => {
+                def.findText = findInput.value;
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+        }
+    }
+    
+    // Refresh all autocomplete instances to include new derived columns
+    function updateFormulaPreview(container, def) {
+        const previewDiv = container.querySelector('.formula-preview');
+        const formulaText = previewDiv.querySelector('.formula-text');
+        
+        const formula = generateFormula(def);
+        
+        if (formula && def.name) {
+            formulaText.textContent = formula;
+            previewDiv.classList.remove('hidden');
+        } else {
+            previewDiv.classList.add('hidden');
+        }
+    }
+    
+    function generateFormula(def) {
+        if (!def.functionType) return null;
+        
+        let funcConfig = null;
+        for (const funcs of Object.values(FUNCTIONS)) {
+            funcConfig = funcs.find(f => f.value === def.functionType);
+            if (funcConfig) break;
+        }
+        
+        if (!funcConfig) return null;
+        
+        if (funcConfig.symbol) {
+            // Binary operator
+            if (!def.operand1.column || !def.operand2.column) return null;
+            return `=${def.operand1.column} ${funcConfig.symbol} ${def.operand2.column}`;
+        }
+        
+        if (funcConfig.formula) {
+            if (funcConfig.operands === 1) {
+                if (!def.operand1.column) return null;
+                return `=${funcConfig.formula.replace('{0}', def.operand1.column)}`;
+            }
+            if (funcConfig.secondIsNumber) {
+                if (!def.operand1.column) return null;
+                return `=${funcConfig.formula.replace('{0}', def.operand1.column).replace('{1}', def.operand2.value || '0')}`;
+            }
+            if (funcConfig.operands === 'multi') {
+                const cols = (def.multiColumns || []).filter(mc => mc.column).map(mc => {
+                    // Include sheet name if different from target sheet
+                    const sheetPrefix = mc.sheet && mc.sheet !== def.targetSheet ? `${mc.sheet}!` : '';
+                    return `${sheetPrefix}${mc.column}`;
+                });
+                if (cols.length === 0) return null;
+                
+                // For CONCAT/CONCATENATE, use separator if provided
+                if ((funcConfig.value === 'concat' || funcConfig.value === 'concatenate') && def.concatSeparator) {
+                    // Use CONCATENATE with separator: CONCATENATE(col1, " ", col2, " ", col3)
+                    const separator = def.concatSeparator;
+                    const parts = [];
+                    cols.forEach((col, i) => {
+                        parts.push(col);
+                        if (i < cols.length - 1) {
+                            parts.push(`"${separator}"`);
+                        }
+                    });
+                    return `=${funcConfig.formula.replace('{cols}', parts.join(', '))}`;
+                }
+                
+                return `=${funcConfig.formula.replace('{cols}', cols.join(', '))}`;
+            }
+        }
+        
+        if (def.functionType === 'if') {
+            if (!def.operand1.column || !def.condition.value) return null;
+            const condition = `${def.operand1.column} ${def.condition.operator} ${def.condition.value}`;
+            const trueVal = def.trueValue || '0';
+            const falseVal = def.falseValue || '0';
+            return `=IF(${condition}, ${trueVal}, ${falseVal})`;
+        }
+        
+        // Handle text functions
+        if (def.functionType === 'mid') {
+            if (!def.operand1.column || !def.midParams) return null;
+            return `=MID(${def.operand1.column}, ${def.midParams.start || '1'}, ${def.midParams.length || '1'})`;
+        }
+        
+        if (def.functionType === 'text') {
+            if (!def.operand1.column || !def.textFormat) return null;
+            return `=TEXT(${def.operand1.column}, "${def.textFormat}")`;
+        }
+        
+        if (def.functionType === 'substitute') {
+            if (!def.operand1.column || !def.substituteParams) return null;
+            return `=SUBSTITUTE(${def.operand1.column}, "${def.substituteParams.oldText}", "${def.substituteParams.newText}")`;
+        }
+        
+        if (def.functionType === 'find') {
+            if (!def.findText || !def.operand1.column) return null;
+            return `=FIND("${def.findText}", ${def.operand1.column})`;
+        }
+        
+        return null;
+    }
+    
+    function removeColumnDefinition(id) {
+        columnDefinitions = columnDefinitions.filter(d => d.id !== id);
+        const div = columnDefsContainer.querySelector(`[data-id="${id}"]`);
+        if (div) div.remove();
+        
+        // Renumber
+        columnDefsContainer.querySelectorAll('.column-def').forEach((el, i) => {
+            el.querySelector('.column-def-number').textContent = i + 1;
+        });
+        
+        hideSamplePreview();
+    }
+    
+    function hideSamplePreview() {
+        samplePreview.classList.add('hidden');
+        downloadBtn.classList.add('hidden');
+        resultFileData = null;
+        resultFilename = null;
+    }
+    
+    // Preview
+    previewBtn.addEventListener('click', async () => {
+        hideError();
+        validationErrors.classList.add('hidden');
+        samplePreview.classList.add('hidden');
+        downloadBtn.classList.add('hidden');
+        
+        // Validate and generate formulas
+        const validDefs = [];
+        const errors = [];
+        
+        for (const def of columnDefinitions) {
+            if (!def.name) {
+                errors.push({ type: 'VALUE', message: 'Column name is required' });
+                continue;
+            }
+            
+            const formula = generateFormula(def);
+            if (!formula) {
+                errors.push({ type: 'VALUE', message: `Incomplete formula for column "${def.name}"` });
+                continue;
+            }
+            
+            validDefs.push({
+                name: def.name,
+                formula: formula,
+                sheet: def.targetSheet || def.operand1.sheet || Object.keys(sheets)[0]
+            });
+        }
+        
+        if (errors.length > 0) {
+            validationErrors.classList.remove('hidden');
+            validationErrorList.innerHTML = errors.map(err => `
+                <div class="validation-error-item">
+                    <span class="error-code">${escapeHtml(err.type)}</span>
+                    <span>${escapeHtml(err.message)}</span>
+                </div>
+            `).join('');
+            return;
+        }
+        
+        if (validDefs.length === 0) {
+            showError('Please define at least one formula column');
+            return;
+        }
+        
+        showLoading('Processing formulas...');
+        
+        // Build files data for multi-file support
+        const filesData = Object.entries(uploadedFiles).map(([fileId, fileInfo]) => ({
+            fileId: parseInt(fileId),
+            label: fileInfo.label
+        }));
+        
+        // Get the target sheet for the first formula (where new columns are added)
+        const targetSheet = validDefs[0]?.sheet || Object.keys(sheets)[0];
+        
+        try {
+            const response = await fetch('/formula/execute/', {
+                method: 'POST',
+                body: JSON.stringify({
+                    files: filesData,
+                    columns: validDefs,
+                    target_sheet: targetSheet
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                displaySamplePreview(data);
+                resultFileData = data.file_data;
+                resultFilename = data.filename;
+                downloadBtn.classList.remove('hidden');
+            } else {
+                validationErrors.classList.remove('hidden');
+                const errs = data.errors || [{ type: 'ERROR', message: data.error }];
+                validationErrorList.innerHTML = errs.map(err => `
+                    <div class="validation-error-item">
+                        <span class="error-code">${escapeHtml(err.type || 'ERROR')}</span>
+                        <span>${escapeHtml(err.message || err.details || JSON.stringify(err))}</span>
+                    </div>
+                `).join('');
+            }
+            
+        } catch (error) {
+            showError('Processing failed: ' + error.message);
+        } finally {
+            hideLoading();
+        }
+    });
+    
+    function displaySamplePreview(data) {
+        document.getElementById('preview-rows').textContent = data.total_rows.toLocaleString();
+        document.getElementById('preview-columns').textContent = data.new_columns;
+        document.getElementById('preview-errors').textContent = data.cell_errors || 0;
+        
+        const thead = document.getElementById('sample-thead');
+        const tbody = document.getElementById('sample-tbody');
+        
+        const newColNames = columnDefinitions.filter(d => d.name).map(d => d.name);
+        
+        // Track derived columns
+        newColNames.forEach(col => derivedColumns.add(col));
+        
+        // Refresh all autocomplete instances to include new derived columns
+        refreshAllAutocompletes();
+        
+        thead.innerHTML = '<tr>' + data.columns.map(col => 
+            `<th class="${newColNames.includes(col) ? 'new-column' : ''}">${escapeHtml(col)}</th>`
+        ).join('') + '</tr>';
+        
+        tbody.innerHTML = '';
+        data.preview.slice(0, 10).forEach(row => {
+            const tr = document.createElement('tr');
+            tr.innerHTML = data.columns.map(col => {
+                const value = row[col];
+                const isError = typeof value === 'string' && value.startsWith('#');
+                return `<td class="${isError ? 'cell-error' : ''}">${escapeHtml(value ?? '')}</td>`;
+            }).join('');
+            tbody.appendChild(tr);
+        });
+        
+        samplePreview.classList.remove('hidden');
+        samplePreview.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+    
+    // Download
+    downloadBtn.addEventListener('click', (e) => {
+        if (resultFileData) {
+            e.preventDefault();
+            const byteCharacters = atob(resultFileData);
+            const byteNumbers = new Array(byteCharacters.length);
+            for (let i = 0; i < byteCharacters.length; i++) {
+                byteNumbers[i] = byteCharacters.charCodeAt(i);
+            }
+            const byteArray = new Uint8Array(byteNumbers);
+            const blob = new Blob([byteArray], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = resultFilename || 'formula_result.xlsx';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    });
+    
+    // Reset
+    resetBtn.addEventListener('click', resetAll);
+    
+    function resetAll() {
+        uploadedFiles = {};
+        sheets = {};
+        columnDefinitions = [];
+        derivedColumns.clear();
+        resultFileData = null;
+        resultFilename = null;
+        
+        uploadZone.classList.remove('hidden');
+        uploadedFilesContainer.innerHTML = '';
+        addMoreFilesBtn.style.display = 'none';
+        formulasCard.classList.add('hidden');
+        executeCard.classList.add('hidden');
+        validationErrors.classList.add('hidden');
+        samplePreview.classList.add('hidden');
+        downloadBtn.classList.add('hidden');
+        
+        columnDefsContainer.innerHTML = '';
+        fileInput.value = '';
+        
+        hideError();
+    }
+</script>
+{% endblock %}
