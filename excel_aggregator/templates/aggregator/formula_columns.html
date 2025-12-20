@@ -924,6 +924,22 @@
             { value: 'substitute', label: 'SUBSTITUTE', formula: 'SUBSTITUTE({0}, "{1}", "{2}")', operands: 'substitute' },
             { value: 'find', label: 'FIND', formula: 'FIND("{0}", {1})', operands: 'find' },
         ],
+        'Lookup': [
+            { value: 'vlookup', label: 'VLOOKUP', formula: 'VLOOKUP({0}, "{1}", "{2}", "{3}")', operands: 'vlookup', description: 'Search in a column, return from another column (using column names)' },
+            { value: 'hlookup', label: 'HLOOKUP', formula: 'HLOOKUP({0}, "{1}", "{2}", "{3}")', operands: 'hlookup', description: 'Search in a row, return from another row (using column names)' },
+            { value: 'xlookup', label: 'XLOOKUP', formula: 'XLOOKUP({0}, "{1}", "{2}")', operands: 'xlookup', description: 'Modern lookup - search in one column, return from another' },
+            { value: 'index', label: 'INDEX', formula: 'INDEX("{0}", {1}, {2})', operands: 'index', description: 'Return value at specific row and column' },
+            { value: 'match', label: 'MATCH', formula: 'MATCH({0}, "{1}", 0)', operands: 'match', description: 'Find position of value in a column' },
+            { value: 'lookup', label: 'LOOKUP', formula: 'LOOKUP({0}, "{1}", "{2}")', operands: 'lookup', description: 'Simple lookup in sorted data' },
+        ],
+        'Conditional Aggregation': [
+            { value: 'countif', label: 'COUNTIF', formula: 'COUNTIF("{0}", "{1}")', operands: 'countif', description: 'Count cells matching criteria' },
+            { value: 'sumif', label: 'SUMIF', formula: 'SUMIF("{0}", "{1}", "{2}")', operands: 'sumif', description: 'Sum cells matching criteria' },
+            { value: 'averageif', label: 'AVERAGEIF', formula: 'AVERAGEIF("{0}", "{1}", "{2}")', operands: 'averageif', description: 'Average cells matching criteria' },
+            { value: 'iferror', label: 'IFERROR', formula: 'IFERROR({0}, {1})', operands: 2, description: 'Return alternate value if error' },
+            { value: 'isblank', label: 'ISBLANK', formula: 'ISBLANK({0})', operands: 1, description: 'Check if cell is blank' },
+            { value: 'counta', label: 'COUNTA', formula: 'COUNTA({cols})', operands: 'multi', description: 'Count non-empty cells' },
+        ],
     };
     
     // State - Multi-file support
@@ -1267,6 +1283,16 @@
             this.bindEvents();
         }
         
+        // Refresh options without clearing selection (for derived column updates)
+        refreshOptions() {
+            const currentSheet = this.getSheetName();
+            this.options = getAvailableColumns(currentSheet);
+            // Update dropdown content if open
+            if (this.isOpen) {
+                this.updateDropdownContent(this.input ? this.input.value : '');
+            }
+        }
+        
         // Legacy method aliases for compatibility
         open() {
             this.showDropdown();
@@ -1353,8 +1379,8 @@
                 if (columnDefinitions.length === 0) {
                     addColumnDefinition();
                 } else {
-                    // Refresh existing formula definitions to show new file's sheets
-                    refreshAllAutocompletes();
+                    // Refresh existing formula definitions to show new file's sheets (full refresh)
+                    refreshAllAutocompletes(true);
                 }
                 
             } else {
@@ -1448,7 +1474,7 @@
         refreshAllAutocompletes();
     }
     
-    function refreshAllAutocompletes() {
+    function refreshAllAutocompletes(fullRefresh = false) {
         // Re-render all column definitions to update sheet dropdowns and autocomplete options
         // First, update target sheet dropdowns
         columnDefsContainer.querySelectorAll('.column-def').forEach((div, index) => {
@@ -1477,24 +1503,71 @@
             });
             
             // Update autocomplete instances
+            // Use refreshOptions() for derived column updates (preserves selection)
+            // Use updateSheet() for full refresh when sheets change
             if (def.column1Autocomplete) {
-                def.column1Autocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+                if (fullRefresh) {
+                    def.column1Autocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+                } else {
+                    def.column1Autocomplete.refreshOptions();
+                }
             }
             if (def.column2Autocomplete) {
-                def.column2Autocomplete.updateSheet(def.operand2.sheet || Object.keys(sheets)[0]);
+                if (fullRefresh) {
+                    def.column2Autocomplete.updateSheet(def.operand2.sheet || Object.keys(sheets)[0]);
+                } else {
+                    def.column2Autocomplete.refreshOptions();
+                }
             }
             if (def.trueValueAutocomplete) {
-                def.trueValueAutocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+                if (fullRefresh) {
+                    def.trueValueAutocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+                } else {
+                    def.trueValueAutocomplete.refreshOptions();
+                }
             }
             if (def.falseValueAutocomplete) {
-                def.falseValueAutocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+                if (fullRefresh) {
+                    def.falseValueAutocomplete.updateSheet(def.operand1.sheet || Object.keys(sheets)[0]);
+                } else {
+                    def.falseValueAutocomplete.refreshOptions();
+                }
             }
             if (def.multiAutocompletes && def.multiColumns) {
                 def.multiAutocompletes.forEach((autocomplete, i) => {
                     if (def.multiColumns[i]) {
-                        autocomplete.updateSheet(def.multiColumns[i].sheet || Object.keys(sheets)[0]);
+                        if (fullRefresh) {
+                            autocomplete.updateSheet(def.multiColumns[i].sheet || Object.keys(sheets)[0]);
+                        } else {
+                            autocomplete.refreshOptions();
+                        }
                     }
                 });
+            }
+            
+            // Also refresh lookup-specific autocompletes
+            if (def.lookupValueAutocomplete) {
+                fullRefresh ? def.lookupValueAutocomplete.updateSheet(def.lookupValue?.sheet || Object.keys(sheets)[0]) : def.lookupValueAutocomplete.refreshOptions();
+            }
+            if (def.lookupColumnAutocomplete) {
+                const lookupSheet = def.lookupParams?.tableSheet || def.xlookupParams?.lookupSheet || Object.keys(sheets)[0];
+                fullRefresh ? def.lookupColumnAutocomplete.updateSheet(lookupSheet) : def.lookupColumnAutocomplete.refreshOptions();
+            }
+            if (def.returnColumnAutocomplete) {
+                const returnSheet = def.lookupParams?.tableSheet || def.xlookupParams?.returnSheet || def.returnColumn?.sheet || Object.keys(sheets)[0];
+                fullRefresh ? def.returnColumnAutocomplete.updateSheet(returnSheet) : def.returnColumnAutocomplete.refreshOptions();
+            }
+            if (def.conditionRangeAutocomplete) {
+                fullRefresh ? def.conditionRangeAutocomplete.updateSheet(def.conditionRange?.sheet || Object.keys(sheets)[0]) : def.conditionRangeAutocomplete.refreshOptions();
+            }
+            if (def.sumRangeAutocomplete) {
+                fullRefresh ? def.sumRangeAutocomplete.updateSheet(def.sumRange?.sheet || Object.keys(sheets)[0]) : def.sumRangeAutocomplete.refreshOptions();
+            }
+            if (def.valueOrErrorAutocomplete) {
+                fullRefresh ? def.valueOrErrorAutocomplete.updateSheet(def.valueOrError?.sheet || Object.keys(sheets)[0]) : def.valueOrErrorAutocomplete.refreshOptions();
+            }
+            if (def.valueIfErrorAutocomplete) {
+                fullRefresh ? def.valueIfErrorAutocomplete.updateSheet(def.valueIfError?.sheet || Object.keys(sheets)[0]) : def.valueIfErrorAutocomplete.refreshOptions();
             }
         });
     }
@@ -1622,7 +1695,20 @@
         
         const nameInput = div.querySelector('.column-name');
         nameInput.addEventListener('input', (e) => {
+            const oldName = def.name;
             def.name = e.target.value.trim();
+            
+            // Update derived columns tracking
+            if (oldName && derivedColumns.has(oldName)) {
+                derivedColumns.delete(oldName);
+            }
+            if (def.name) {
+                derivedColumns.add(def.name);
+            }
+            
+            // Refresh all autocompletes to show the new derived column
+            refreshAllAutocompletes();
+            
             updateFormulaPreview(div, def);
             hideSamplePreview();
         });
@@ -2196,6 +2282,432 @@
                 updateFormulaPreview(container, def);
                 hideSamplePreview();
             });
+            
+        } else if (funcConfig.operands === 'vlookup' || funcConfig.operands === 'hlookup') {
+            // VLOOKUP/HLOOKUP: lookup_value, table_sheet, return_column, lookup_column
+            // Enhanced version using column NAMES instead of column numbers
+            if (!def.lookupParams) {
+                def.lookupParams = { 
+                    tableSheet: Object.keys(sheets)[0] || '', 
+                    returnColumn: '',
+                    lookupColumn: ''
+                };
+            }
+            const lookupType = funcConfig.operands === 'vlookup' ? 'column' : 'row';
+            const html = `
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Lookup Value (from your data):</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                </div>
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Lookup Table (Sheet):</span>
+                        <select class="formula-select lookup-table-sheet">${sheetOptions}</select>
+                    </div>
+                </div>
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Search In Column:</span>
+                        <div class="column-autocomplete lookup-column-autocomplete"></div>
+                    </div>
+                    <div class="operand-group">
+                        <span class="operand-label">Return Column:</span>
+                        <div class="column-autocomplete return-column-autocomplete"></div>
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const tableSheetSelect = operandsContainer.querySelector('.lookup-table-sheet');
+            const lookupColumnContainer = operandsContainer.querySelector('.lookup-column-autocomplete');
+            const returnColumnContainer = operandsContainer.querySelector('.return-column-autocomplete');
+            
+            // Autocomplete for lookup value column (from source sheet)
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container,
+                sheet1Select.value,
+                def.operand1.column,
+                (value) => {
+                    def.operand1.column = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                sheet1Select
+            );
+            
+            // Set initial table sheet value
+            tableSheetSelect.value = def.lookupParams.tableSheet;
+            
+            // Autocomplete for lookup column (in lookup table)
+            def.lookupColumnAutocomplete = new ColumnAutocomplete(
+                lookupColumnContainer,
+                tableSheetSelect.value,
+                def.lookupParams.lookupColumn,
+                (value) => {
+                    def.lookupParams.lookupColumn = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                tableSheetSelect
+            );
+            
+            // Autocomplete for return column (in lookup table)
+            def.returnColumnAutocomplete = new ColumnAutocomplete(
+                returnColumnContainer,
+                tableSheetSelect.value,
+                def.lookupParams.returnColumn,
+                (value) => {
+                    def.lookupParams.returnColumn = value;
+                    updateFormulaPreview(container, def);
+                    hideSamplePreview();
+                },
+                tableSheetSelect
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+            tableSheetSelect.addEventListener('change', () => {
+                def.lookupParams.tableSheet = tableSheetSelect.value;
+                // Update both lookup and return column autocompletes
+                def.lookupColumnAutocomplete.updateSheet(tableSheetSelect.value);
+                def.returnColumnAutocomplete.updateSheet(tableSheetSelect.value);
+                updateFormulaPreview(container, def);
+                hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'xlookup') {
+            // XLOOKUP: lookup_value, lookup_column, return_column
+            if (!def.xlookupParams) {
+                def.xlookupParams = { 
+                    lookupSheet: Object.keys(sheets)[0] || '', 
+                    lookupColumn: '',
+                    returnSheet: Object.keys(sheets)[0] || '',
+                    returnColumn: ''
+                };
+            }
+            const html = `
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Lookup Value (Column):</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                </div>
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Search In (Sheet.Column):</span>
+                        <select class="formula-select sheet-select lookup-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete lookup-column-autocomplete"></div>
+                    </div>
+                </div>
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Return From (Sheet.Column):</span>
+                        <select class="formula-select sheet-select return-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete return-column-autocomplete"></div>
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const lookupSheetSelect = operandsContainer.querySelector('.lookup-sheet');
+            const lookupColumnContainer = operandsContainer.querySelector('.lookup-column-autocomplete');
+            const returnSheetSelect = operandsContainer.querySelector('.return-sheet');
+            const returnColumnContainer = operandsContainer.querySelector('.return-column-autocomplete');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container, sheet1Select.value, def.operand1.column,
+                (value) => { def.operand1.column = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                sheet1Select
+            );
+            
+            def.lookupColumnAutocomplete = new ColumnAutocomplete(
+                lookupColumnContainer, lookupSheetSelect.value, def.xlookupParams.lookupColumn,
+                (value) => { def.xlookupParams.lookupColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                lookupSheetSelect
+            );
+            
+            def.returnColumnAutocomplete = new ColumnAutocomplete(
+                returnColumnContainer, returnSheetSelect.value, def.xlookupParams.returnColumn,
+                (value) => { def.xlookupParams.returnColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                returnSheetSelect
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            lookupSheetSelect.value = def.xlookupParams.lookupSheet;
+            lookupSheetSelect.addEventListener('change', () => {
+                def.xlookupParams.lookupSheet = lookupSheetSelect.value;
+                def.lookupColumnAutocomplete.updateSheet(lookupSheetSelect.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            returnSheetSelect.value = def.xlookupParams.returnSheet;
+            returnSheetSelect.addEventListener('change', () => {
+                def.xlookupParams.returnSheet = returnSheetSelect.value;
+                def.returnColumnAutocomplete.updateSheet(returnSheetSelect.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'index') {
+            // INDEX: sheet, row_num, col_num
+            if (!def.indexParams) {
+                def.indexParams = { sheet: Object.keys(sheets)[0] || '', rowNum: '1', colNum: '1' };
+            }
+            const html = `
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Sheet:</span>
+                        <select class="formula-select index-sheet">${sheetOptions}</select>
+                    </div>
+                    <div class="operand-group">
+                        <span class="operand-label">Row #:</span>
+                        <input type="number" class="value-input index-row" placeholder="1" value="${def.indexParams.rowNum}" min="1" style="width: 80px;">
+                    </div>
+                    <div class="operand-group">
+                        <span class="operand-label">Column #:</span>
+                        <input type="number" class="value-input index-col" placeholder="1" value="${def.indexParams.colNum}" min="1" style="width: 80px;">
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const indexSheet = operandsContainer.querySelector('.index-sheet');
+            const rowInput = operandsContainer.querySelector('.index-row');
+            const colInput = operandsContainer.querySelector('.index-col');
+            
+            indexSheet.value = def.indexParams.sheet;
+            indexSheet.addEventListener('change', () => {
+                def.indexParams.sheet = indexSheet.value;
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            rowInput.addEventListener('input', () => {
+                def.indexParams.rowNum = rowInput.value;
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            colInput.addEventListener('input', () => {
+                def.indexParams.colNum = colInput.value;
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'match') {
+            // MATCH: lookup_value, lookup_column
+            if (!def.matchParams) {
+                def.matchParams = { lookupSheet: Object.keys(sheets)[0] || '', lookupColumn: '' };
+            }
+            const html = `
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Lookup Value (Column):</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                    <div class="operand-group">
+                        <span class="operand-label">Search In (Sheet.Column):</span>
+                        <select class="formula-select sheet-select lookup-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete lookup-column-autocomplete"></div>
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const lookupSheetSelect = operandsContainer.querySelector('.lookup-sheet');
+            const lookupColumnContainer = operandsContainer.querySelector('.lookup-column-autocomplete');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container, sheet1Select.value, def.operand1.column,
+                (value) => { def.operand1.column = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                sheet1Select
+            );
+            
+            def.matchLookupAutocomplete = new ColumnAutocomplete(
+                lookupColumnContainer, lookupSheetSelect.value, def.matchParams.lookupColumn,
+                (value) => { def.matchParams.lookupColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                lookupSheetSelect
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            lookupSheetSelect.value = def.matchParams.lookupSheet;
+            lookupSheetSelect.addEventListener('change', () => {
+                def.matchParams.lookupSheet = lookupSheetSelect.value;
+                def.matchLookupAutocomplete.updateSheet(lookupSheetSelect.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'lookup') {
+            // LOOKUP: lookup_value, lookup_column, result_column
+            if (!def.lookupSimpleParams) {
+                def.lookupSimpleParams = { 
+                    lookupSheet: Object.keys(sheets)[0] || '', lookupColumn: '',
+                    resultSheet: Object.keys(sheets)[0] || '', resultColumn: ''
+                };
+            }
+            const html = `
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Lookup Value (Column):</span>
+                        <select class="formula-select sheet-select sheet1-select">${sheetOptions}</select>
+                        <div class="column-autocomplete column1-autocomplete"></div>
+                    </div>
+                </div>
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Search In:</span>
+                        <select class="formula-select sheet-select lookup-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete lookup-column-autocomplete"></div>
+                    </div>
+                    <div class="operand-group">
+                        <span class="operand-label">Return From:</span>
+                        <select class="formula-select sheet-select result-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete result-column-autocomplete"></div>
+                    </div>
+                </div>
+            `;
+            operandsContainer.innerHTML = html;
+            
+            const sheet1Select = operandsContainer.querySelector('.sheet1-select');
+            const column1Container = operandsContainer.querySelector('.column1-autocomplete');
+            const lookupSheetSelect = operandsContainer.querySelector('.lookup-sheet');
+            const lookupColumnContainer = operandsContainer.querySelector('.lookup-column-autocomplete');
+            const resultSheetSelect = operandsContainer.querySelector('.result-sheet');
+            const resultColumnContainer = operandsContainer.querySelector('.result-column-autocomplete');
+            
+            def.column1Autocomplete = new ColumnAutocomplete(
+                column1Container, sheet1Select.value, def.operand1.column,
+                (value) => { def.operand1.column = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                sheet1Select
+            );
+            
+            def.lookupSimpleAutocomplete = new ColumnAutocomplete(
+                lookupColumnContainer, lookupSheetSelect.value, def.lookupSimpleParams.lookupColumn,
+                (value) => { def.lookupSimpleParams.lookupColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                lookupSheetSelect
+            );
+            
+            def.resultColumnAutocomplete = new ColumnAutocomplete(
+                resultColumnContainer, resultSheetSelect.value, def.lookupSimpleParams.resultColumn,
+                (value) => { def.lookupSimpleParams.resultColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                resultSheetSelect
+            );
+            
+            sheet1Select.addEventListener('change', () => {
+                def.operand1.sheet = sheet1Select.value;
+                def.column1Autocomplete.updateSheet(sheet1Select.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            lookupSheetSelect.value = def.lookupSimpleParams.lookupSheet;
+            lookupSheetSelect.addEventListener('change', () => {
+                def.lookupSimpleParams.lookupSheet = lookupSheetSelect.value;
+                def.lookupSimpleAutocomplete.updateSheet(lookupSheetSelect.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            resultSheetSelect.value = def.lookupSimpleParams.resultSheet;
+            resultSheetSelect.addEventListener('change', () => {
+                def.lookupSimpleParams.resultSheet = resultSheetSelect.value;
+                def.resultColumnAutocomplete.updateSheet(resultSheetSelect.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+        } else if (funcConfig.operands === 'countif' || funcConfig.operands === 'sumif' || funcConfig.operands === 'averageif') {
+            // COUNTIF/SUMIF/AVERAGEIF: range, criteria, [sum_range]
+            if (!def.conditionalParams) {
+                def.conditionalParams = { 
+                    rangeSheet: Object.keys(sheets)[0] || '', rangeColumn: '',
+                    criteria: '',
+                    sumRangeSheet: Object.keys(sheets)[0] || '', sumRangeColumn: ''
+                };
+            }
+            const needsSumRange = funcConfig.operands === 'sumif' || funcConfig.operands === 'averageif';
+            let html = `
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
+                    <div class="operand-group">
+                        <span class="operand-label">Range (Sheet.Column):</span>
+                        <select class="formula-select sheet-select range-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete range-column-autocomplete"></div>
+                    </div>
+                    <div class="operand-group">
+                        <span class="operand-label">Criteria:</span>
+                        <input type="text" class="value-input criteria-input" placeholder='e.g., ">100", "Apple"' value="${escapeHtml(def.conditionalParams.criteria)}" style="width: 150px;">
+                    </div>
+            `;
+            if (needsSumRange) {
+                html += `
+                    <div class="operand-group">
+                        <span class="operand-label">${funcConfig.operands === 'sumif' ? 'Sum' : 'Average'} Range:</span>
+                        <select class="formula-select sheet-select sum-range-sheet">${sheetOptions}</select>
+                        <div class="column-autocomplete sum-range-column-autocomplete"></div>
+                    </div>
+                `;
+            }
+            html += `</div>`;
+            operandsContainer.innerHTML = html;
+            
+            const rangeSheetSelect = operandsContainer.querySelector('.range-sheet');
+            const rangeColumnContainer = operandsContainer.querySelector('.range-column-autocomplete');
+            const criteriaInput = operandsContainer.querySelector('.criteria-input');
+            
+            def.rangeColumnAutocomplete = new ColumnAutocomplete(
+                rangeColumnContainer, rangeSheetSelect.value, def.conditionalParams.rangeColumn,
+                (value) => { def.conditionalParams.rangeColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                rangeSheetSelect
+            );
+            
+            rangeSheetSelect.value = def.conditionalParams.rangeSheet;
+            rangeSheetSelect.addEventListener('change', () => {
+                def.conditionalParams.rangeSheet = rangeSheetSelect.value;
+                def.rangeColumnAutocomplete.updateSheet(rangeSheetSelect.value);
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            criteriaInput.addEventListener('input', () => {
+                def.conditionalParams.criteria = criteriaInput.value;
+                updateFormulaPreview(container, def); hideSamplePreview();
+            });
+            
+            if (needsSumRange) {
+                const sumRangeSheetSelect = operandsContainer.querySelector('.sum-range-sheet');
+                const sumRangeColumnContainer = operandsContainer.querySelector('.sum-range-column-autocomplete');
+                
+                def.sumRangeAutocomplete = new ColumnAutocomplete(
+                    sumRangeColumnContainer, sumRangeSheetSelect.value, def.conditionalParams.sumRangeColumn,
+                    (value) => { def.conditionalParams.sumRangeColumn = value; updateFormulaPreview(container, def); hideSamplePreview(); },
+                    sumRangeSheetSelect
+                );
+                
+                sumRangeSheetSelect.value = def.conditionalParams.sumRangeSheet;
+                sumRangeSheetSelect.addEventListener('change', () => {
+                    def.conditionalParams.sumRangeSheet = sumRangeSheetSelect.value;
+                    def.sumRangeAutocomplete.updateSheet(sumRangeSheetSelect.value);
+                    updateFormulaPreview(container, def); hideSamplePreview();
+                });
+            }
         }
     }
     
@@ -2295,10 +2807,79 @@
             return `=FIND("${def.findText}", ${def.operand1.column})`;
         }
         
+        // Lookup functions
+        if (def.functionType === 'vlookup') {
+            if (!def.operand1.column || !def.lookupParams || !def.lookupParams.returnColumn) return null;
+            // New enhanced syntax: VLOOKUP(lookup_value, "table", "return_column", "lookup_column")
+            const lookupCol = def.lookupParams.lookupColumn || def.operand1.column; // Default to same column name
+            return `=VLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${def.lookupParams.returnColumn}", "${lookupCol}")`;
+        }
+        
+        if (def.functionType === 'hlookup') {
+            if (!def.operand1.column || !def.lookupParams || !def.lookupParams.returnColumn) return null;
+            // New enhanced syntax: HLOOKUP(lookup_value, "table", "return_row", "lookup_row")
+            const lookupCol = def.lookupParams.lookupColumn || def.operand1.column;
+            return `=HLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${def.lookupParams.returnColumn}", "${lookupCol}")`;
+        }
+        
+        if (def.functionType === 'xlookup') {
+            if (!def.operand1.column || !def.xlookupParams || !def.xlookupParams.lookupColumn || !def.xlookupParams.returnColumn) return null;
+            const lookupRef = `${def.xlookupParams.lookupSheet}.${def.xlookupParams.lookupColumn}`;
+            const returnRef = `${def.xlookupParams.returnSheet}.${def.xlookupParams.returnColumn}`;
+            return `=XLOOKUP(${def.operand1.column}, "${lookupRef}", "${returnRef}")`;
+        }
+        
+        if (def.functionType === 'index') {
+            if (!def.indexParams) return null;
+            return `=INDEX("${def.indexParams.sheet}", ${def.indexParams.rowNum || 1}, ${def.indexParams.colNum || 1})`;
+        }
+        
+        if (def.functionType === 'match') {
+            if (!def.operand1.column || !def.matchParams || !def.matchParams.lookupColumn) return null;
+            const lookupRef = `${def.matchParams.lookupSheet}.${def.matchParams.lookupColumn}`;
+            return `=MATCH(${def.operand1.column}, "${lookupRef}", 0)`;
+        }
+        
+        if (def.functionType === 'lookup') {
+            if (!def.operand1.column || !def.lookupSimpleParams) return null;
+            const lookupRef = `${def.lookupSimpleParams.lookupSheet}.${def.lookupSimpleParams.lookupColumn}`;
+            const resultRef = `${def.lookupSimpleParams.resultSheet}.${def.lookupSimpleParams.resultColumn}`;
+            return `=LOOKUP(${def.operand1.column}, "${lookupRef}", "${resultRef}")`;
+        }
+        
+        // Conditional aggregation functions
+        if (def.functionType === 'countif') {
+            if (!def.conditionalParams || !def.conditionalParams.rangeColumn) return null;
+            const rangeRef = `${def.conditionalParams.rangeSheet}.${def.conditionalParams.rangeColumn}`;
+            return `=COUNTIF("${rangeRef}", "${def.conditionalParams.criteria}")`;
+        }
+        
+        if (def.functionType === 'sumif') {
+            if (!def.conditionalParams || !def.conditionalParams.rangeColumn) return null;
+            const rangeRef = `${def.conditionalParams.rangeSheet}.${def.conditionalParams.rangeColumn}`;
+            const sumRangeRef = def.conditionalParams.sumRangeColumn ? 
+                `${def.conditionalParams.sumRangeSheet}.${def.conditionalParams.sumRangeColumn}` : rangeRef;
+            return `=SUMIF("${rangeRef}", "${def.conditionalParams.criteria}", "${sumRangeRef}")`;
+        }
+        
+        if (def.functionType === 'averageif') {
+            if (!def.conditionalParams || !def.conditionalParams.rangeColumn) return null;
+            const rangeRef = `${def.conditionalParams.rangeSheet}.${def.conditionalParams.rangeColumn}`;
+            const avgRangeRef = def.conditionalParams.sumRangeColumn ? 
+                `${def.conditionalParams.sumRangeSheet}.${def.conditionalParams.sumRangeColumn}` : rangeRef;
+            return `=AVERAGEIF("${rangeRef}", "${def.conditionalParams.criteria}", "${avgRangeRef}")`;
+        }
+        
         return null;
     }
     
     function removeColumnDefinition(id) {
+        // Find the definition to get its name before removing
+        const defToRemove = columnDefinitions.find(d => d.id === id);
+        if (defToRemove && defToRemove.name) {
+            derivedColumns.delete(defToRemove.name);
+        }
+        
         columnDefinitions = columnDefinitions.filter(d => d.id !== id);
         const div = columnDefsContainer.querySelector(`[data-id="${id}"]`);
         if (div) div.remove();
@@ -2307,6 +2888,9 @@
         columnDefsContainer.querySelectorAll('.column-def').forEach((el, i) => {
             el.querySelector('.column-def-number').textContent = i + 1;
         });
+        
+        // Refresh autocompletes to remove the deleted derived column
+        refreshAllAutocompletes();
         
         hideSamplePreview();
     }

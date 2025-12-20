@@ -702,14 +702,23 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         try {
+            // Set up timeout controller (5 minutes for ScraperAPI requests)
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes
+            
+            progressText.textContent += ' (Using proxy, this may take a few minutes...)';
+            
             const response = await fetch('/myntra/fetch/', {
                 method: 'POST',
                 body: JSON.stringify({ product_ids: ids }),
                 headers: {
                     'Content-Type': 'application/json',
                     'X-CSRFToken': csrfToken
-                }
+                },
+                signal: controller.signal
             });
+            
+            clearTimeout(timeoutId);
             
             progressFill.style.width = '90%';
             const data = await response.json();
@@ -717,6 +726,10 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.success) {
                 allResults = data.products;
+                // Debug: Log first product to check data structure
+                if (allResults.length > 0) {
+                    console.log('First product data:', allResults[0]);
+                }
                 filterInput.value = '';
                 statusFilter.value = 'all';
                 currentPage = 1;
@@ -727,7 +740,11 @@ document.addEventListener('DOMContentLoaded', function() {
                 showError(data.error || 'Failed to fetch products');
             }
         } catch (error) {
-            showError('Failed to fetch products: ' + error.message);
+            if (error.name === 'AbortError') {
+                showError('Request timed out. Try fewer product IDs at once.');
+            } else {
+                showError('Failed to fetch products: ' + error.message);
+            }
             console.error(error);
         } finally {
             loadingCard.classList.add('hidden');
@@ -758,12 +775,14 @@ document.addEventListener('DOMContentLoaded', function() {
             if (statusValue === 'failed' && product.success) return false;
             if (statusValue === 'in-stock') {
                 if (!product.success) return false;
-                const hasStock = product.sizes && product.sizes.some(s => s.available);
+                const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+                const hasStock = sizes.some(s => s && s.available);
                 if (!hasStock) return false;
             }
             if (statusValue === 'out-of-stock') {
                 if (!product.success) return false;
-                const allOutOfStock = product.sizes && product.sizes.every(s => !s.available);
+                const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+                const allOutOfStock = sizes.length === 0 || sizes.every(s => !s || !s.available);
                 if (!allOutOfStock) return false;
             }
             
@@ -915,8 +934,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
         
         if (product.success) {
-            const availableSizes = product.sizes.filter(s => s.available);
-            const totalStock = product.sizes.reduce((sum, s) => {
+            // Ensure sizes is always an array
+            const sizes = Array.isArray(product.sizes) ? product.sizes : [];
+            if (!Array.isArray(product.sizes)) {
+                console.warn(`Product ${product.product_id} has invalid sizes:`, product.sizes);
+            }
+            const availableSizes = sizes.filter(s => s && s.available);
+            const totalStock = sizes.reduce((sum, s) => {
+                if (!s) return sum;
                 const qty = typeof s.quantity === 'number' ? s.quantity : 0;
                 return sum + qty;
             }, 0);
@@ -925,8 +950,8 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="product-header">
                     <div class="product-main-info">
                         <div class="product-id">${productIdHtml}</div>
-                        <div class="product-name">${escapeHtml(product.product_name || 'Unknown Product')}</div>
-                        ${product.brand ? `<div class="product-brand">${escapeHtml(product.brand)}</div>` : ''}
+                        <div class="product-name">${escapeHtml(product.product_name && product.product_name.trim() ? product.product_name : 'Unknown Product')}</div>
+                        ${product.brand && product.brand.trim() ? `<div class="product-brand">${escapeHtml(product.brand)}</div>` : ''}
                     </div>
                     <div class="product-price-info">
                         ${product.price ? `<div class="product-price">₹${product.price.toLocaleString()}</div>` : ''}
@@ -938,7 +963,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 <div class="product-details">
                     <div style="display: flex; justify-content: space-between; align-items: center; margin-top: 1rem;">
                         <span style="color: var(--text-muted); font-size: 0.9rem;">
-                            ${availableSizes.length} of ${product.sizes.length} sizes available
+                            ${availableSizes.length} of ${sizes.length} sizes available
                             ${totalStock > 0 ? ` • Total stock: ${totalStock}` : ''}
                         </span>
                         <a href="${product.url}" target="_blank" class="product-link">
@@ -946,17 +971,18 @@ document.addEventListener('DOMContentLoaded', function() {
                         </a>
                     </div>
                     <div class="sizes-grid">
-                        ${product.sizes.map(size => `
+                        ${sizes.length > 0 ? sizes.map(size => `
                             <div class="size-card ${size.available ? 'available' : 'unavailable'}">
-                                <div class="size-label">${escapeHtml(size.size)}</div>
+                                <div class="size-label">${escapeHtml(size.size || 'N/A')}</div>
                                 <div class="size-quantity ${size.available ? 'in-stock' : 'out-of-stock'}">
                                     ${size.available ? 
-                                        (typeof size.quantity === 'number' ? `${size.quantity} unit${size.quantity !== 1 ? 's' : ''} left` : 'In Stock') : 
+                                        (typeof size.quantity === 'number' ? `${size.quantity} unit${size.quantity !== 1 ? 's' : ''} left` : 
+                                        (size.quantity || 'In Stock')) : 
                                         'Out of Stock'}
                                 </div>
                                 ${size.price ? `<div class="size-price">₹${size.price.toLocaleString()}</div>` : ''}
                             </div>
-                        `).join('')}
+                        `).join('') : '<div style="grid-column: 1/-1; text-align: center; color: var(--text-muted); padding: 1rem;">No size information available</div>'}
                     </div>
                 </div>
             `;

@@ -241,6 +241,196 @@ class FormulaParser:
         # TEXT - format number/date (simplified - just convert to string)
         expr = re.sub(r'\bTEXT\s*\(([^,]+),\s*"[^"]+"\)', r'str(\1)', expr, flags=re.IGNORECASE)
         
+        # Lookup functions - these need special handling
+        # VLOOKUP(lookup_value, table_array, return_column, [lookup_column], [range_lookup])
+        # Enhanced version using column NAMES instead of column numbers
+        def convert_vlookup(match):
+            lookup_val = match.group(1).strip()
+            table_arr = match.group(2).strip().strip('"')
+            return_col = match.group(3).strip().strip('"')
+            lookup_col = match.group(4).strip().strip('"') if match.group(4) else ''
+            range_lookup = match.group(5)
+            if range_lookup:
+                range_lookup = 'True' if range_lookup.upper() in ('TRUE', '1') else 'False'
+            else:
+                range_lookup = 'False'
+            if lookup_col:
+                return f'_vlookup({lookup_val}, "{table_arr}", "{return_col}", "{lookup_col}", {range_lookup})'
+            else:
+                return f'_vlookup({lookup_val}, "{table_arr}", "{return_col}", None, {range_lookup})'
+        
+        # Full pattern: VLOOKUP(value, "table", "return_col", "lookup_col", TRUE/FALSE)
+        expr = re.sub(
+            r'\bVLOOKUP\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*,\s*(TRUE|FALSE|0|1)\s*\)',
+            convert_vlookup,
+            expr, flags=re.IGNORECASE
+        )
+        
+        # Pattern with lookup_col but no range_lookup: VLOOKUP(value, "table", "return_col", "lookup_col")
+        def convert_vlookup_4args(match):
+            lookup_val = match.group(1).strip()
+            table_arr = match.group(2).strip().strip('"')
+            return_col = match.group(3).strip().strip('"')
+            lookup_col = match.group(4).strip().strip('"')
+            return f'_vlookup({lookup_val}, "{table_arr}", "{return_col}", "{lookup_col}", False)'
+        
+        expr = re.sub(
+            r'\bVLOOKUP\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*\)',
+            convert_vlookup_4args,
+            expr, flags=re.IGNORECASE
+        )
+        
+        # Simplified VLOOKUP pattern (3 args): VLOOKUP(value, "table", "return_col")
+        def convert_vlookup_simple(match):
+            lookup_val = match.group(1).strip()
+            table_arr = match.group(2).strip().strip('"')
+            return_col = match.group(3).strip().strip('"')
+            return f'_vlookup({lookup_val}, "{table_arr}", "{return_col}", None, False)'
+        
+        expr = re.sub(
+            r'\bVLOOKUP\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*\)',
+            convert_vlookup_simple,
+            expr, flags=re.IGNORECASE
+        )
+        
+        # HLOOKUP(lookup_value, table_array, row_index, [range_lookup])
+        def convert_hlookup(match):
+            lookup_val = match.group(1).strip()
+            table_arr = match.group(2).strip().strip('"')
+            row_idx = match.group(3).strip()
+            range_lookup = match.group(4)
+            if range_lookup:
+                range_lookup = 'True' if range_lookup.upper() in ('TRUE', '1') else 'False'
+            else:
+                range_lookup = 'False'
+            return f'_hlookup({lookup_val}, "{table_arr}", {row_idx}, {range_lookup})'
+        
+        expr = re.sub(
+            r'\bHLOOKUP\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*,\s*(\d+)\s*(?:,\s*(TRUE|FALSE|0|1))?\s*\)',
+            convert_hlookup,
+            expr, flags=re.IGNORECASE
+        )
+        def convert_hlookup_simple(match):
+            lookup_val = match.group(1).strip()
+            table_arr = match.group(2).strip().strip('"')
+            row_idx = match.group(3).strip()
+            return f'_hlookup({lookup_val}, "{table_arr}", {row_idx}, False)'
+        
+        expr = re.sub(
+            r'\bHLOOKUP\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*(\d+)\s*\)',
+            convert_hlookup_simple,
+            expr, flags=re.IGNORECASE
+        )
+        
+        # XLOOKUP(lookup_value, lookup_array, return_array, [if_not_found], [match_mode], [search_mode])
+        # Use a function to handle XLOOKUP conversion properly
+        def convert_xlookup(match):
+            lookup_val = match.group(1).strip()
+            lookup_arr = match.group(2).strip().strip('"')
+            return_arr = match.group(3).strip().strip('"')
+            if_not_found = match.group(4).strip().strip('"') if match.group(4) else '#N/A'
+            match_mode = match.group(5) if match.group(5) else '0'
+            search_mode = match.group(6) if match.group(6) else '1'
+            return f'_xlookup({lookup_val}, "{lookup_arr}", "{return_arr}", "{if_not_found}", {match_mode}, {search_mode})'
+        
+        expr = re.sub(
+            r'\bXLOOKUP\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*(?:,\s*"?([^",]*)"?)?\s*(?:,\s*(-?\d+))?\s*(?:,\s*(-?\d+))?\s*\)',
+            convert_xlookup,
+            expr, flags=re.IGNORECASE
+        )
+        # Simplified XLOOKUP pattern (3 args only)
+        def convert_xlookup_simple(match):
+            lookup_val = match.group(1).strip()
+            lookup_arr = match.group(2).strip().strip('"')
+            return_arr = match.group(3).strip().strip('"')
+            return f'_xlookup({lookup_val}, "{lookup_arr}", "{return_arr}", "#N/A", 0, 1)'
+        
+        expr = re.sub(
+            r'\bXLOOKUP\s*\(\s*([^,]+)\s*,\s*([^,]+)\s*,\s*([^,)]+)\s*\)',
+            convert_xlookup_simple,
+            expr, flags=re.IGNORECASE
+        )
+        
+        # INDEX(array, row_num, [col_num])
+        expr = re.sub(
+            r'\bINDEX\s*\(\s*"?([^",]+)"?\s*,\s*(\d+)\s*(?:,\s*(\d+))?\s*\)',
+            r'_index("\1", \2, \3 if "\3" else 1)',
+            expr, flags=re.IGNORECASE
+        )
+        expr = re.sub(
+            r'\bINDEX\s*\(\s*([^,]+)\s*,\s*(\d+)\s*\)',
+            r'_index(\1, \2, 1)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # MATCH(lookup_value, lookup_array, [match_type])
+        expr = re.sub(
+            r'\bMATCH\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*(?:,\s*(-?\d+))?\s*\)',
+            r'_match(\1, "\2", \3 if "\3" else 1)',
+            expr, flags=re.IGNORECASE
+        )
+        expr = re.sub(
+            r'\bMATCH\s*\(\s*([^,]+)\s*,\s*([^,)]+)\s*\)',
+            r'_match(\1, \2, 1)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # LOOKUP(lookup_value, lookup_vector, [result_vector])
+        expr = re.sub(
+            r'\bLOOKUP\s*\(\s*([^,]+)\s*,\s*"?([^",]+)"?\s*(?:,\s*"?([^",]+)"?)?\s*\)',
+            r'_lookup(\1, "\2", "\3" if "\3" else None)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # COUNTIF(range, criteria)
+        expr = re.sub(
+            r'\bCOUNTIF\s*\(\s*"?([^",]+)"?\s*,\s*"?([^")]+)"?\s*\)',
+            r'_countif("\1", "\2")',
+            expr, flags=re.IGNORECASE
+        )
+        expr = re.sub(
+            r'\bCOUNTIF\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)',
+            r'_countif(\1, \2)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # SUMIF(range, criteria, [sum_range])
+        expr = re.sub(
+            r'\bSUMIF\s*\(\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*(?:,\s*"?([^",]+)"?)?\s*\)',
+            r'_sumif("\1", "\2", "\3" if "\3" else None)',
+            expr, flags=re.IGNORECASE
+        )
+        expr = re.sub(
+            r'\bSUMIF\s*\(\s*([^,]+)\s*,\s*([^,)]+)\s*\)',
+            r'_sumif(\1, \2, None)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # AVERAGEIF(range, criteria, [average_range])
+        expr = re.sub(
+            r'\bAVERAGEIF\s*\(\s*"?([^",]+)"?\s*,\s*"?([^",]+)"?\s*(?:,\s*"?([^",]+)"?)?\s*\)',
+            r'_averageif("\1", "\2", "\3" if "\3" else None)',
+            expr, flags=re.IGNORECASE
+        )
+        expr = re.sub(
+            r'\bAVERAGEIF\s*\(\s*([^,]+)\s*,\s*([^,)]+)\s*\)',
+            r'_averageif(\1, \2, None)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # IFERROR(value, value_if_error)
+        expr = re.sub(
+            r'\bIFERROR\s*\(\s*([^,]+)\s*,\s*([^)]+)\s*\)',
+            r'_iferror(\1, \2)',
+            expr, flags=re.IGNORECASE
+        )
+        
+        # ISBLANK(value)
+        expr = re.sub(r'\bISBLANK\s*\(([^)]+)\)', r'_isblank(\1)', expr, flags=re.IGNORECASE)
+        
+        # COUNTA(value1, value2, ...)
+        expr = re.sub(r'\bCOUNTA\s*\(([^)]+)\)', r'_counta(\1)', expr, flags=re.IGNORECASE)
+        
         # Close SUM brackets
         if 'sum([' in expr:
             expr = re.sub(r'sum\(\[([^)]+)\)', r'sum([\1])', expr)
@@ -250,7 +440,19 @@ class FormulaParser:
         expr = re.sub(r'\bFALSE\b', 'False', expr, flags=re.IGNORECASE)
         
         # Replace column names with their values from row_data
-        # Sort by length (longest first) to avoid partial replacements
+        # BUT preserve quoted strings - don't replace column names inside quotes
+        
+        # Step 1: Extract all quoted strings and replace with placeholders
+        quoted_strings = []
+        def save_quoted(match):
+            quoted_strings.append(match.group(0))
+            return f'__QUOTED_{len(quoted_strings) - 1}__'
+        
+        # Match both single and double quoted strings
+        expr = re.sub(r'"[^"]*"', save_quoted, expr)
+        expr = re.sub(r"'[^']*'", save_quoted, expr)
+        
+        # Step 2: Replace column names (longest first to avoid partial replacements)
         columns = sorted(row_data.keys(), key=len, reverse=True)
         for col in columns:
             value = row_data[col]
@@ -264,6 +466,10 @@ class FormulaParser:
                 replacement = str(value)
             # Use word boundary replacement
             expr = re.sub(rf'\b{re.escape(col)}\b', replacement, expr)
+        
+        # Step 3: Restore quoted strings
+        for i, quoted in enumerate(quoted_strings):
+            expr = expr.replace(f'__QUOTED_{i}__', quoted)
         
         return expr
 
@@ -331,28 +537,715 @@ class WorkbookBuilder:
         raise ExcelError('REF', f"Sheet '{sheet}' not found. Available sheets: {available}")
 
 
+class LookupFunctions:
+    """Excel lookup functions that need access to entire sheets."""
+    
+    def __init__(self, workbook: WorkbookBuilder):
+        self.workbook = workbook
+    
+    def vlookup(self, lookup_value, table_array, return_col, lookup_col=None, range_lookup=False):
+        """
+        VLOOKUP - Vertical lookup (Enhanced version using column names)
+        Searches for a value in a column and returns a value from another column.
+        
+        Args:
+            lookup_value: The value to search for
+            table_array: Sheet name in format "FileLabel.SheetName" (e.g., "File1.Stock")
+            return_col: Column NAME to return from (e.g., "Closing")
+            lookup_col: Column NAME to search in (optional, defaults to first column)
+            range_lookup: False for exact match (default), True for approximate match
+        """
+        try:
+            # Get the data as DataFrame
+            if isinstance(table_array, str):
+                table_array = table_array.strip()
+                df = self.workbook.get_sheet_data(table_array)
+            elif isinstance(table_array, pd.DataFrame):
+                df = table_array
+            else:
+                return '#VALUE!'
+            
+            if df.empty:
+                return '#REF!'
+            
+            # Get lookup column (first column if not specified)
+            if lookup_col:
+                lookup_col = str(lookup_col).strip()
+                if lookup_col not in df.columns:
+                    # Try case-insensitive match
+                    lookup_col_lower = lookup_col.lower()
+                    found = False
+                    for c in df.columns:
+                        if str(c).lower() == lookup_col_lower:
+                            lookup_col = c
+                            found = True
+                            break
+                    if not found:
+                        return '#REF!'
+                search_col = df[lookup_col]
+            else:
+                search_col = df.iloc[:, 0]
+            
+            # Get return column by name
+            return_col = str(return_col).strip()
+            if return_col not in df.columns:
+                # Try case-insensitive match
+                return_col_lower = return_col.lower()
+                found = False
+                for c in df.columns:
+                    if str(c).lower() == return_col_lower:
+                        return_col = c
+                        found = True
+                        break
+                if not found:
+                    return '#REF!'
+            
+            # Handle None/NaN lookup value
+            if lookup_value is None or (isinstance(lookup_value, float) and pd.isna(lookup_value)):
+                return '#N/A'
+            
+            # Convert lookup_value for comparison
+            lookup_str = str(lookup_value).strip().lower()
+            try:
+                lookup_num = float(lookup_value)
+                has_numeric = True
+            except:
+                lookup_num = None
+                has_numeric = False
+            
+            # Search for the value
+            if range_lookup:
+                # Approximate match - find largest value <= lookup_value
+                sorted_indices = search_col.sort_values().index
+                match_idx = None
+                for idx in sorted_indices:
+                    val = search_col[idx]
+                    if pd.isna(val):
+                        continue
+                    if val <= lookup_value:
+                        match_idx = idx
+                    else:
+                        break
+                if match_idx is not None:
+                    result = df.loc[match_idx, return_col]
+                    return '' if pd.isna(result) else str(result)
+            else:
+                # Exact match - iterate through rows
+                for idx in range(len(df)):
+                    val = search_col.iloc[idx]
+                    if pd.isna(val):
+                        continue
+                    
+                    # Try numeric comparison
+                    if has_numeric:
+                        try:
+                            if float(val) == lookup_num:
+                                result = df.iloc[idx][return_col]
+                                return '' if pd.isna(result) else str(result)
+                        except:
+                            pass
+                    
+                    # String comparison (case-insensitive)
+                    if str(val).strip().lower() == lookup_str:
+                        result = df.iloc[idx][return_col]
+                        return '' if pd.isna(result) else str(result)
+            
+            return '#N/A'
+            
+        except Exception as e:
+            return f'#ERROR!'
+    
+    def hlookup(self, lookup_value, table_array, row_index, range_lookup=False):
+        """
+        HLOOKUP - Horizontal lookup
+        Searches for a value in the first row and returns a value from another row.
+        
+        Args:
+            lookup_value: The value to search for
+            table_array: Can be a sheet name (str) or a DataFrame
+            row_index: The row number to return from (1-based)
+            range_lookup: False for exact match (default), True for approximate match
+        """
+        try:
+            # Get the data as DataFrame
+            if isinstance(table_array, str):
+                df = self.workbook.get_sheet_data(table_array)
+            elif isinstance(table_array, pd.DataFrame):
+                df = table_array
+            else:
+                return '#VALUE!'
+            
+            if df.empty or row_index < 1 or row_index > len(df):
+                return '#REF!'
+            
+            row_index = int(row_index) - 1  # Convert to 0-based
+            
+            # Search in first row (column headers or first data row)
+            first_row = df.iloc[0].values
+            
+            for col_idx, val in enumerate(first_row):
+                if val == lookup_value or str(val) == str(lookup_value):
+                    return str(df.iloc[row_index, col_idx])
+            
+            return '#N/A'
+            
+        except Exception as e:
+            return f'#ERROR!'
+    
+    def xlookup(self, lookup_value, lookup_array, return_array, if_not_found='#N/A', match_mode=0, search_mode=1):
+        """
+        XLOOKUP - Modern lookup function
+        Searches for a value in a range and returns a corresponding value.
+        
+        Args:
+            lookup_value: The value to search for
+            lookup_array: Column name, sheet.column, or array to search in
+            return_array: Column name, sheet.column, or array to return from
+            if_not_found: Value to return if no match (default '#N/A')
+            match_mode: 0=exact match (default), -1=next smaller, 1=next larger, 2=wildcard
+            search_mode: 1=first to last (default), -1=last to first
+        """
+        try:
+            # Convert match_mode and search_mode to int
+            match_mode = int(match_mode) if match_mode is not None else 0
+            search_mode = int(search_mode) if search_mode is not None else 1
+            
+            # Parse lookup_array - can be "sheet.column" or just column name
+            lookup_col = None
+            if isinstance(lookup_array, str):
+                lookup_array = lookup_array.strip()
+                if '.' in lookup_array:
+                    # Split on the LAST dot to get sheet.column
+                    parts = lookup_array.rsplit('.', 1)
+                    if len(parts) == 2:
+                        sheet_name, col_name = parts
+                        try:
+                            df = self.workbook.get_sheet_data(sheet_name)
+                            if col_name in df.columns:
+                                lookup_col = df[col_name]
+                            else:
+                                # Try case-insensitive column match
+                                col_lower = col_name.lower()
+                                for c in df.columns:
+                                    if str(c).lower() == col_lower:
+                                        lookup_col = df[c]
+                                        break
+                        except:
+                            pass
+                
+                if lookup_col is None:
+                    # Search in all sheets
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if lookup_array in df.columns:
+                            lookup_col = df[lookup_array]
+                            break
+                        # Try case-insensitive
+                        for c in df.columns:
+                            if str(c).lower() == lookup_array.lower():
+                                lookup_col = df[c]
+                                break
+                        if lookup_col is not None:
+                            break
+                
+                if lookup_col is None:
+                    return '#REF!'
+            elif isinstance(lookup_array, pd.Series):
+                lookup_col = lookup_array
+            else:
+                return '#VALUE!'
+            
+            # Parse return_array similarly
+            return_col = None
+            if isinstance(return_array, str):
+                return_array = return_array.strip()
+                if '.' in return_array:
+                    parts = return_array.rsplit('.', 1)
+                    if len(parts) == 2:
+                        sheet_name, col_name = parts
+                        try:
+                            df = self.workbook.get_sheet_data(sheet_name)
+                            if col_name in df.columns:
+                                return_col = df[col_name]
+                            else:
+                                col_lower = col_name.lower()
+                                for c in df.columns:
+                                    if str(c).lower() == col_lower:
+                                        return_col = df[c]
+                                        break
+                        except:
+                            pass
+                
+                if return_col is None:
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if return_array in df.columns:
+                            return_col = df[return_array]
+                            break
+                        for c in df.columns:
+                            if str(c).lower() == return_array.lower():
+                                return_col = df[c]
+                                break
+                        if return_col is not None:
+                            break
+                
+                if return_col is None:
+                    return '#REF!'
+            elif isinstance(return_array, pd.Series):
+                return_col = return_array
+            else:
+                return '#VALUE!'
+            
+            # Ensure same length
+            if len(lookup_col) != len(return_col):
+                return '#VALUE!'
+            
+            # Handle None/NaN lookup value
+            if lookup_value is None or (isinstance(lookup_value, float) and pd.isna(lookup_value)):
+                return str(if_not_found) if if_not_found else '#N/A'
+            
+            # Convert lookup_value to string for comparison
+            lookup_str = str(lookup_value).strip()
+            
+            # Also try as number if possible
+            try:
+                lookup_num = float(lookup_value)
+                has_numeric = True
+            except:
+                lookup_num = None
+                has_numeric = False
+            
+            # Search for the value
+            indices = range(len(lookup_col)) if search_mode >= 0 else reversed(range(len(lookup_col)))
+            
+            for idx in indices:
+                val = lookup_col.iloc[idx]
+                
+                # Skip NaN values in lookup column
+                if pd.isna(val):
+                    continue
+                
+                if match_mode == 0:  # Exact match
+                    # Try numeric comparison first
+                    if has_numeric:
+                        try:
+                            if float(val) == lookup_num:
+                                result = return_col.iloc[idx]
+                                return '' if pd.isna(result) else str(result)
+                        except:
+                            pass
+                    
+                    # String comparison (case-insensitive)
+                    if str(val).strip().lower() == lookup_str.lower():
+                        result = return_col.iloc[idx]
+                        return '' if pd.isna(result) else str(result)
+                        
+                elif match_mode == 2:  # Wildcard match
+                    import fnmatch
+                    if fnmatch.fnmatch(str(val).lower(), lookup_str.lower()):
+                        result = return_col.iloc[idx]
+                        return '' if pd.isna(result) else str(result)
+            
+            return str(if_not_found) if if_not_found else '#N/A'
+            
+        except Exception as e:
+            return '#ERROR!'
+    
+    def index_func(self, array, row_num, col_num=1):
+        """
+        INDEX - Returns a value at a given position in an array
+        
+        Args:
+            array: Sheet name or DataFrame
+            row_num: Row number (1-based)
+            col_num: Column number (1-based, default 1)
+        """
+        try:
+            if isinstance(array, str):
+                df = self.workbook.get_sheet_data(array)
+            elif isinstance(array, pd.DataFrame):
+                df = array
+            else:
+                return '#VALUE!'
+            
+            row_num = int(row_num) - 1  # Convert to 0-based
+            col_num = int(col_num) - 1
+            
+            if row_num < 0 or row_num >= len(df):
+                return '#REF!'
+            if col_num < 0 or col_num >= len(df.columns):
+                return '#REF!'
+            
+            return str(df.iloc[row_num, col_num])
+            
+        except Exception as e:
+            return '#ERROR!'
+    
+    def match_func(self, lookup_value, lookup_array, match_type=1):
+        """
+        MATCH - Returns the position of a value in an array
+        
+        Args:
+            lookup_value: The value to find
+            lookup_array: Column name or sheet.column to search in
+            match_type: 1=less than (default), 0=exact, -1=greater than
+        """
+        try:
+            # Parse lookup_array
+            if isinstance(lookup_array, str):
+                if '.' in lookup_array:
+                    sheet_name, col_name = lookup_array.rsplit('.', 1)
+                    df = self.workbook.get_sheet_data(sheet_name)
+                    lookup_col = df[col_name] if col_name in df.columns else None
+                else:
+                    lookup_col = None
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if lookup_array in df.columns:
+                            lookup_col = df[lookup_array]
+                            break
+                
+                if lookup_col is None:
+                    return '#REF!'
+            elif isinstance(lookup_array, pd.Series):
+                lookup_col = lookup_array
+            else:
+                return '#VALUE!'
+            
+            match_type = int(match_type)
+            
+            if match_type == 0:  # Exact match
+                for idx, val in enumerate(lookup_col):
+                    if val == lookup_value or str(val) == str(lookup_value):
+                        return idx + 1  # Return 1-based position
+            elif match_type == 1:  # Less than or equal (assumes sorted ascending)
+                last_match = None
+                for idx, val in enumerate(lookup_col):
+                    if val <= lookup_value:
+                        last_match = idx + 1
+                    else:
+                        break
+                if last_match:
+                    return last_match
+            elif match_type == -1:  # Greater than or equal (assumes sorted descending)
+                for idx, val in enumerate(lookup_col):
+                    if val >= lookup_value:
+                        return idx + 1
+            
+            return '#N/A'
+            
+        except Exception as e:
+            return '#ERROR!'
+    
+    def lookup(self, lookup_value, lookup_vector, result_vector=None):
+        """
+        LOOKUP - Simple lookup function
+        
+        Args:
+            lookup_value: The value to find
+            lookup_vector: Column to search in (sheet.column format)
+            result_vector: Column to return from (sheet.column format, optional)
+        """
+        try:
+            # Parse lookup_vector
+            if isinstance(lookup_vector, str):
+                if '.' in lookup_vector:
+                    sheet_name, col_name = lookup_vector.rsplit('.', 1)
+                    df = self.workbook.get_sheet_data(sheet_name)
+                    lookup_col = df[col_name] if col_name in df.columns else None
+                else:
+                    lookup_col = None
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if lookup_vector in df.columns:
+                            lookup_col = df[lookup_vector]
+                            break
+            else:
+                return '#VALUE!'
+            
+            if lookup_col is None:
+                return '#REF!'
+            
+            # Determine result column
+            if result_vector is None:
+                result_col = lookup_col
+            elif isinstance(result_vector, str):
+                if '.' in result_vector:
+                    sheet_name, col_name = result_vector.rsplit('.', 1)
+                    df = self.workbook.get_sheet_data(sheet_name)
+                    result_col = df[col_name] if col_name in df.columns else None
+                else:
+                    result_col = None
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if result_vector in df.columns:
+                            result_col = df[result_vector]
+                            break
+            else:
+                return '#VALUE!'
+            
+            if result_col is None:
+                return '#REF!'
+            
+            # Find the value (assumes sorted, finds largest <= lookup_value)
+            last_match_idx = None
+            for idx, val in enumerate(lookup_col):
+                if val <= lookup_value:
+                    last_match_idx = idx
+                else:
+                    break
+            
+            if last_match_idx is not None:
+                return str(result_col.iloc[last_match_idx])
+            
+            return '#N/A'
+            
+        except Exception as e:
+            return '#ERROR!'
+    
+    def countif(self, range_ref, criteria):
+        """COUNTIF - Count cells that meet a criteria."""
+        try:
+            # Parse range reference
+            if isinstance(range_ref, str):
+                if '.' in range_ref:
+                    sheet_name, col_name = range_ref.rsplit('.', 1)
+                    df = self.workbook.get_sheet_data(sheet_name)
+                    data_col = df[col_name] if col_name in df.columns else None
+                else:
+                    data_col = None
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if range_ref in df.columns:
+                            data_col = df[range_ref]
+                            break
+            else:
+                return '#VALUE!'
+            
+            if data_col is None:
+                return '#REF!'
+            
+            # Parse criteria (supports >, <, >=, <=, <>)
+            criteria_str = str(criteria)
+            if criteria_str.startswith('>='):
+                return sum(1 for v in data_col if v >= float(criteria_str[2:]))
+            elif criteria_str.startswith('<='):
+                return sum(1 for v in data_col if v <= float(criteria_str[2:]))
+            elif criteria_str.startswith('<>'):
+                return sum(1 for v in data_col if str(v) != criteria_str[2:])
+            elif criteria_str.startswith('>'):
+                return sum(1 for v in data_col if v > float(criteria_str[1:]))
+            elif criteria_str.startswith('<'):
+                return sum(1 for v in data_col if v < float(criteria_str[1:]))
+            else:
+                # Exact match
+                return sum(1 for v in data_col if v == criteria or str(v) == criteria_str)
+                
+        except Exception as e:
+            return '#ERROR!'
+    
+    def sumif(self, range_ref, criteria, sum_range=None):
+        """SUMIF - Sum cells that meet a criteria."""
+        try:
+            # Parse range reference
+            if isinstance(range_ref, str):
+                if '.' in range_ref:
+                    sheet_name, col_name = range_ref.rsplit('.', 1)
+                    df = self.workbook.get_sheet_data(sheet_name)
+                    data_col = df[col_name] if col_name in df.columns else None
+                else:
+                    data_col = None
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if range_ref in df.columns:
+                            data_col = df[range_ref]
+                            break
+            else:
+                return '#VALUE!'
+            
+            if data_col is None:
+                return '#REF!'
+            
+            # Parse sum_range if provided
+            if sum_range:
+                if isinstance(sum_range, str):
+                    if '.' in sum_range:
+                        sheet_name, col_name = sum_range.rsplit('.', 1)
+                        df = self.workbook.get_sheet_data(sheet_name)
+                        sum_col = df[col_name] if col_name in df.columns else None
+                    else:
+                        sum_col = None
+                        for sheet_name, df in self.workbook.sheets.items():
+                            if sum_range in df.columns:
+                                sum_col = df[sum_range]
+                                break
+                else:
+                    return '#VALUE!'
+                
+                if sum_col is None:
+                    return '#REF!'
+            else:
+                sum_col = data_col
+            
+            # Parse criteria
+            criteria_str = str(criteria)
+            total = 0
+            
+            for idx, v in enumerate(data_col):
+                match = False
+                if criteria_str.startswith('>='):
+                    match = v >= float(criteria_str[2:])
+                elif criteria_str.startswith('<='):
+                    match = v <= float(criteria_str[2:])
+                elif criteria_str.startswith('<>'):
+                    match = str(v) != criteria_str[2:]
+                elif criteria_str.startswith('>'):
+                    match = v > float(criteria_str[1:])
+                elif criteria_str.startswith('<'):
+                    match = v < float(criteria_str[1:])
+                else:
+                    match = v == criteria or str(v) == criteria_str
+                
+                if match:
+                    try:
+                        total += float(sum_col.iloc[idx])
+                    except (ValueError, TypeError):
+                        pass
+            
+            return total
+                
+        except Exception as e:
+            return '#ERROR!'
+    
+    def averageif(self, range_ref, criteria, average_range=None):
+        """AVERAGEIF - Average cells that meet a criteria."""
+        try:
+            # Similar to SUMIF but calculates average
+            if isinstance(range_ref, str):
+                if '.' in range_ref:
+                    sheet_name, col_name = range_ref.rsplit('.', 1)
+                    df = self.workbook.get_sheet_data(sheet_name)
+                    data_col = df[col_name] if col_name in df.columns else None
+                else:
+                    data_col = None
+                    for sheet_name, df in self.workbook.sheets.items():
+                        if range_ref in df.columns:
+                            data_col = df[range_ref]
+                            break
+            else:
+                return '#VALUE!'
+            
+            if data_col is None:
+                return '#REF!'
+            
+            # Parse average_range if provided
+            if average_range:
+                if isinstance(average_range, str):
+                    if '.' in average_range:
+                        sheet_name, col_name = average_range.rsplit('.', 1)
+                        df = self.workbook.get_sheet_data(sheet_name)
+                        avg_col = df[col_name] if col_name in df.columns else None
+                    else:
+                        avg_col = None
+                        for sheet_name, df in self.workbook.sheets.items():
+                            if average_range in df.columns:
+                                avg_col = df[average_range]
+                                break
+                else:
+                    return '#VALUE!'
+                
+                if avg_col is None:
+                    return '#REF!'
+            else:
+                avg_col = data_col
+            
+            # Parse criteria
+            criteria_str = str(criteria)
+            values = []
+            
+            for idx, v in enumerate(data_col):
+                match = False
+                if criteria_str.startswith('>='):
+                    match = v >= float(criteria_str[2:])
+                elif criteria_str.startswith('<='):
+                    match = v <= float(criteria_str[2:])
+                elif criteria_str.startswith('<>'):
+                    match = str(v) != criteria_str[2:]
+                elif criteria_str.startswith('>'):
+                    match = v > float(criteria_str[1:])
+                elif criteria_str.startswith('<'):
+                    match = v < float(criteria_str[1:])
+                else:
+                    match = v == criteria or str(v) == criteria_str
+                
+                if match:
+                    try:
+                        values.append(float(avg_col.iloc[idx]))
+                    except (ValueError, TypeError):
+                        pass
+            
+            if values:
+                return sum(values) / len(values)
+            return '#DIV/0!'
+                
+        except Exception as e:
+            return '#ERROR!'
+    
+    def iferror(self, value, value_if_error):
+        """IFERROR - Returns value_if_error if value is an error, otherwise returns value."""
+        if isinstance(value, str) and value.startswith('#'):
+            return value_if_error
+        return value
+    
+    def isblank(self, value):
+        """ISBLANK - Returns TRUE if value is blank/empty."""
+        if value is None or (isinstance(value, str) and value.strip() == ''):
+            return True
+        if pd.isna(value):
+            return True
+        return False
+    
+    def counta(self, *args):
+        """COUNTA - Counts non-empty cells."""
+        count = 0
+        for arg in args:
+            if isinstance(arg, (list, tuple, pd.Series)):
+                for v in arg:
+                    if v is not None and not (isinstance(v, str) and v.strip() == '') and not pd.isna(v):
+                        count += 1
+            else:
+                if arg is not None and not (isinstance(arg, str) and arg.strip() == '') and not pd.isna(arg):
+                    count += 1
+        return count
+
+
 class FormulaEngine:
     """Main formula evaluation engine."""
     
     def __init__(self, workbook: WorkbookBuilder):
         self.workbook = workbook
         self.computed_columns: Dict[str, List[Any]] = {}
+        self.lookup_functions = LookupFunctions(workbook)
     
     def evaluate_formula(self, formula: str, sheet: str) -> List[Any]:
         """Evaluate a formula for all rows in a sheet."""
         df = self.workbook.get_sheet_data(sheet)
         results = []
         
-        # Get available columns (including computed ones)
-        available_columns = set(df.columns) | set(self.computed_columns.keys())
+        # Get available columns (including computed ones FOR THIS SHEET)
+        # Computed columns are stored as "sheet.column" keys
+        sheet_computed_cols = {}
+        for full_key, values in self.computed_columns.items():
+            if '.' in full_key:
+                col_sheet, col_name = full_key.rsplit('.', 1)
+                if col_sheet == sheet:
+                    sheet_computed_cols[col_name] = values
+            else:
+                # Legacy: column without sheet prefix
+                sheet_computed_cols[full_key] = values
+        
+        available_columns = set(df.columns) | set(sheet_computed_cols.keys())
         
         for idx in range(len(df)):
             # Build row data dictionary
             row_data = {}
             for col in df.columns:
                 row_data[col] = df.iloc[idx][col]
-            # Add computed columns
-            for col, values in self.computed_columns.items():
+            # Add computed columns FOR THIS SHEET ONLY
+            for col, values in sheet_computed_cols.items():
                 if idx < len(values):
                     row_data[col] = values[idx]
             
@@ -434,6 +1327,10 @@ class FormulaEngine:
                 'True': True,
                 'False': False,
                 'None': None,
+                'str': str,
+                'float': float,
+                'int': int,
+                # Text functions
                 '_concat': _concat,
                 '_left': _left,
                 '_right': _right,
@@ -444,6 +1341,19 @@ class FormulaEngine:
                 '_trim': _trim,
                 '_find': _find,
                 '_substitute': _substitute,
+                # Lookup functions
+                '_vlookup': self.lookup_functions.vlookup,
+                '_hlookup': self.lookup_functions.hlookup,
+                '_xlookup': self.lookup_functions.xlookup,
+                '_index': self.lookup_functions.index_func,
+                '_match': self.lookup_functions.match_func,
+                '_lookup': self.lookup_functions.lookup,
+                '_countif': self.lookup_functions.countif,
+                '_sumif': self.lookup_functions.sumif,
+                '_averageif': self.lookup_functions.averageif,
+                '_iferror': self.lookup_functions.iferror,
+                '_isblank': self.lookup_functions.isblank,
+                '_counta': self.lookup_functions.counta,
             }
             
             result = eval(python_expr, {"__builtins__": {}}, safe_dict)
@@ -484,9 +1394,13 @@ class FormulaEngine:
         except Exception as e:
             return f'#ERROR!'
     
-    def add_computed_column(self, column_name: str, values: List[Any]):
-        """Store computed column values."""
-        self.computed_columns[column_name] = values
+    def add_computed_column(self, column_name: str, values: List[Any], sheet: str = None):
+        """Store computed column values with sheet prefix to avoid conflicts."""
+        if sheet:
+            key = f"{sheet}.{column_name}"
+        else:
+            key = column_name
+        self.computed_columns[key] = values
 
 
 class ExecutionManager:
@@ -591,8 +1505,8 @@ class ExecutionManager:
                 # Evaluate formula
                 values = self.engine.evaluate_formula(formula, sheet)
                 
-                # Store results
-                self.engine.add_computed_column(col_name, values)
+                # Store results with sheet prefix to avoid conflicts
+                self.engine.add_computed_column(col_name, values, sheet)
                 self.workbook.add_column(sheet, col_name, values)
                 results[f"{sheet}.{col_name}"] = values
             

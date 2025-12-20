@@ -465,6 +465,156 @@ def extract_sizes_from_html(html_content):
     return sizes
 
 
+def get_free_proxy():
+    """Fetch a free proxy from public proxy lists."""
+    import random
+
+    free_proxy_apis = [
+        # ProxyScrape free API
+        "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=all",
+        # Free proxy list
+        "https://www.proxy-list.download/api/v1/get?type=http",
+    ]
+
+    for api_url in free_proxy_apis:
+        try:
+            response = requests.get(api_url, timeout=10)
+            if response.status_code == 200:
+                proxies = response.text.strip().split("\n")
+                # Filter out empty lines and get working proxies
+                proxies = [p.strip() for p in proxies if p.strip() and ":" in p]
+                if proxies:
+                    # Return a random proxy from the list
+                    proxy = random.choice(proxies[:20])  # Use from top 20
+                    return f"http://{proxy}"
+        except Exception:
+            continue
+
+    return None
+
+
+# Cache for free proxies (to avoid fetching too often)
+_free_proxy_cache = {
+    "proxies": [],
+    "last_fetch": 0,
+    "cache_duration": 300,  # 5 minutes
+}
+
+
+def get_cached_free_proxy():
+    """Get a free proxy with caching to avoid too many API calls."""
+    import random
+
+    current_time = time.time()
+
+    # Refresh cache if expired or empty
+    if (
+        not _free_proxy_cache["proxies"]
+        or (current_time - _free_proxy_cache["last_fetch"])
+        > _free_proxy_cache["cache_duration"]
+    ):
+        try:
+            # Fetch from ProxyScrape
+            response = requests.get(
+                "https://api.proxyscrape.com/v2/?request=displayproxies&protocol=http&timeout=10000&country=all&ssl=all&anonymity=elite",
+                timeout=10,
+            )
+            if response.status_code == 200:
+                proxies = response.text.strip().split("\n")
+                proxies = [p.strip() for p in proxies if p.strip() and ":" in p]
+                if proxies:
+                    _free_proxy_cache["proxies"] = proxies[:50]  # Keep top 50
+                    _free_proxy_cache["last_fetch"] = current_time
+        except Exception:
+            pass
+
+    if _free_proxy_cache["proxies"]:
+        proxy = random.choice(_free_proxy_cache["proxies"])
+        return f"http://{proxy}"
+
+    return None
+
+
+def get_proxy_config():
+    """Get proxy configuration from environment variables or use free proxies."""
+    # PROXY DISABLED - Using direct local IP for now
+    # Uncomment below code to enable proxy support
+
+    proxy_config = {
+        "enabled": False,
+        "type": None,
+        "proxies": None,
+        "scraper_api_key": None,
+    }
+
+    # Return disabled config (direct connection)
+    return proxy_config
+
+    # ========== COMMENTED OUT PROXY CODE ==========
+    # import os
+    #
+    # # Check for ScraperAPI key (recommended - has free tier of 1000 credits/month)
+    # # Hardcoded key or from environment variable
+    # scraper_api_key = (
+    #     os.environ.get("SCRAPER_API_KEY") or "e4465645235d5c3c6baf15af85aa1608"
+    # )
+    # if scraper_api_key:
+    #     proxy_config["enabled"] = True
+    #     proxy_config["type"] = "scraper_api"
+    #     proxy_config["scraper_api_key"] = scraper_api_key
+    #     return proxy_config
+    #
+    # # Check for custom proxy URL
+    # # Format: http://user:pass@proxy.example.com:8080
+    # proxy_url = os.environ.get("PROXY_URL")
+    # if proxy_url:
+    #     proxy_config["enabled"] = True
+    #     proxy_config["type"] = "custom"
+    #     proxy_config["proxies"] = {
+    #         "http": proxy_url,
+    #         "https": proxy_url,
+    #     }
+    #     return proxy_config
+    #
+    # # Check for rotating proxy service (like ProxyMesh, Oxylabs, etc.)
+    # proxy_host = os.environ.get("PROXY_HOST")
+    # proxy_port = os.environ.get("PROXY_PORT")
+    # proxy_user = os.environ.get("PROXY_USER")
+    # proxy_pass = os.environ.get("PROXY_PASS")
+    #
+    # if proxy_host and proxy_port:
+    #     proxy_config["enabled"] = True
+    #     proxy_config["type"] = "rotating"
+    #     if proxy_user and proxy_pass:
+    #         proxy_url = f"http://{proxy_user}:{proxy_pass}@{proxy_host}:{proxy_port}"
+    #     else:
+    #         proxy_url = f"http://{proxy_host}:{proxy_port}"
+    #     proxy_config["proxies"] = {
+    #         "http": proxy_url,
+    #         "https": proxy_url,
+    #     }
+    #     return proxy_config
+    #
+    # # Check if free proxy fallback is enabled (USE_FREE_PROXY=true)
+    # use_free_proxy = os.environ.get("USE_FREE_PROXY", "false").lower() in (
+    #     "true",
+    #     "1",
+    #     "yes",
+    # )
+    # if use_free_proxy:
+    #     free_proxy = get_cached_free_proxy()
+    #     if free_proxy:
+    #         proxy_config["enabled"] = True
+    #         proxy_config["type"] = "free_proxy"
+    #         proxy_config["proxies"] = {
+    #             "http": free_proxy,
+    #             "https": free_proxy,
+    #         }
+    #         return proxy_config
+    #
+    # return proxy_config
+
+
 def scrape_myntra_product(product_id):
     """Scrape a single Myntra product using their API."""
     import random
@@ -482,11 +632,23 @@ def scrape_myntra_product(product_id):
         "error": None,
     }
 
+    # Proxy disabled - using direct local IP connection
+    # proxy_config = get_proxy_config()  # Commented out - proxy disabled
+
     # Try multiple approaches
     methods_tried = []
 
     # Method 1: Try Myntra's product API directly
     api_url = f"https://www.myntra.com/gateway/v2/product/{product_id}"
+
+    # ScraperAPI code commented out (proxy disabled)
+    # scraper_api_params = None
+    # if proxy_config["enabled"] and proxy_config["type"] == "scraper_api":
+    #     api_url = "https://api.scraperapi.com/"
+    #     scraper_api_params = {
+    #         "api_key": proxy_config["scraper_api_key"],
+    #         "url": original_api_url,
+    #     }
 
     # Rotate user agents to avoid detection
     user_agents = [
@@ -509,10 +671,22 @@ def scrape_myntra_product(product_id):
         "x-requested-with": "browser",
     }
 
+    # Proxy disabled - no proxies configured
+    # proxies = None
+    # if proxy_config["enabled"] and proxy_config["type"] in [
+    #     "custom",
+    #     "rotating",
+    #     "free_proxy",
+    # ]:
+    #     proxies = proxy_config["proxies"]
+
+    # Timeout for direct requests (proxy disabled)
+    api_timeout = 30
+
     try:
-        # Try API first
+        # Try API first (direct connection - proxy disabled)
         methods_tried.append("API")
-        response = requests.get(api_url, headers=api_headers, timeout=15)
+        response = requests.get(api_url, headers=api_headers, timeout=api_timeout)
 
         if response.status_code == 200:
             try:
@@ -561,7 +735,7 @@ def scrape_myntra_product(product_id):
             except json.JSONDecodeError:
                 pass
 
-        # Method 2: Try webpage with session
+        # Method 2: Try webpage with session (direct connection - proxy disabled)
         methods_tried.append("Webpage")
         session = requests.Session()
 
@@ -582,6 +756,7 @@ def scrape_myntra_product(product_id):
 
         # Now try the product page with cookies
         url = f"https://www.myntra.com/{product_id}"
+
         page_headers = {
             "User-Agent": random.choice(user_agents),
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
@@ -600,7 +775,8 @@ def scrape_myntra_product(product_id):
             "Referer": "https://www.myntra.com/",
         }
 
-        response = session.get(url, headers=page_headers, timeout=20)
+        page_timeout = 60
+        response = session.get(url, headers=page_headers, timeout=page_timeout)
 
         if response.status_code == 404:
             result["error"] = "Product not found"
@@ -668,40 +844,127 @@ def scrape_myntra_product(product_id):
 
         # Extract data from pdpData if found
         if pdp_data:
-            parsing_details["pdp_keys"] = list(pdp_data.keys())[:10]  # First 10 keys
-            result["product_name"] = pdp_data.get("name")
+            parsing_details["pdp_keys"] = list(pdp_data.keys())[
+                :20
+            ]  # First 20 keys for debugging
 
-            # Get brand
+            # Try multiple ways to get product name
+            result["product_name"] = (
+                pdp_data.get("name")
+                or pdp_data.get("productName")
+                or pdp_data.get("title")
+                or pdp_data.get("product_name")
+            )
+
+            # Try to get name from nested style object
+            if not result["product_name"] and "style" in pdp_data:
+                style = pdp_data.get("style", {})
+                if isinstance(style, dict):
+                    result["product_name"] = (
+                        style.get("name")
+                        or style.get("productName")
+                        or style.get("title")
+                    )
+
+            # Get brand - try multiple locations
             brand_info = pdp_data.get("brand", {})
             if isinstance(brand_info, dict):
-                result["brand"] = brand_info.get("name")
+                result["brand"] = (
+                    brand_info.get("name")
+                    or brand_info.get("brandName")
+                    or brand_info.get("label")
+                )
             elif isinstance(brand_info, str):
                 result["brand"] = brand_info
 
-            # Get price info
+            # Try brand from style object
+            if not result["brand"] and "style" in pdp_data:
+                style = pdp_data.get("style", {})
+                if isinstance(style, dict):
+                    brand_from_style = style.get("brand", {})
+                    if isinstance(brand_from_style, dict):
+                        result["brand"] = brand_from_style.get(
+                            "name"
+                        ) or brand_from_style.get("brandName")
+                    elif isinstance(brand_from_style, str):
+                        result["brand"] = brand_from_style
+                    elif isinstance(style.get("brandName"), str):
+                        result["brand"] = style.get("brandName")
+
+            # Get price info - try multiple locations
             price_info = pdp_data.get("price", {})
             if isinstance(price_info, dict):
-                result["mrp"] = price_info.get("mrp")
-                result["price"] = price_info.get("discounted") or result["mrp"]
-                result["discount"] = price_info.get("discount", 0)
+                result["mrp"] = price_info.get("mrp") or price_info.get("MRP")
+                result["price"] = (
+                    price_info.get("discounted")
+                    or price_info.get("sellingPrice")
+                    or price_info.get("price")
+                    or result["mrp"]
+                )
+                result["discount"] = price_info.get("discount", 0) or price_info.get(
+                    "discountPercent", 0
+                )
 
-            # Get sizes from pdpData
+            # Try price from style object
+            if not result["mrp"] and "style" in pdp_data:
+                style = pdp_data.get("style", {})
+                if isinstance(style, dict):
+                    style_price = style.get("price", {})
+                    if isinstance(style_price, dict):
+                        result["mrp"] = style_price.get("mrp") or style_price.get("MRP")
+                        result["price"] = (
+                            style_price.get("discounted")
+                            or style_price.get("sellingPrice")
+                            or result["mrp"]
+                        )
+                        result["discount"] = style_price.get(
+                            "discount", 0
+                        ) or style_price.get("discountPercent", 0)
+
+            # Get sizes from pdpData - try multiple locations
             sizes_data = pdp_data.get("sizes", [])
+
+            # Try sizes from style object if not found
+            if not sizes_data and "style" in pdp_data:
+                style = pdp_data.get("style", {})
+                if isinstance(style, dict):
+                    sizes_data = style.get("sizes", [])
+
             for size_info in sizes_data:
                 if isinstance(size_info, dict):
                     size_entry = {
-                        "size": size_info.get("label", ""),
+                        "size": (
+                            size_info.get("label")
+                            or size_info.get("size")
+                            or size_info.get("name")
+                            or ""
+                        ),
                         "available": size_info.get("available", False),
-                        "quantity": size_info.get("inventory", {}).get("quantity")
-                        if isinstance(size_info.get("inventory"), dict)
-                        else None,
+                        "quantity": None,
                         "price": result["price"],
                     }
-                    # Try to get quantity from different locations
+
+                    # Try multiple ways to get quantity
+                    inventory = size_info.get("inventory", {})
+                    if isinstance(inventory, dict):
+                        size_entry["quantity"] = (
+                            inventory.get("quantity")
+                            or inventory.get("availableCount")
+                            or inventory.get("stock")
+                        )
+
                     if size_entry["quantity"] is None:
-                        size_entry["quantity"] = size_info.get("availableCount")
+                        size_entry["quantity"] = (
+                            size_info.get("availableCount")
+                            or size_info.get("quantity")
+                            or size_info.get("stock")
+                        )
+
                     if size_entry["quantity"] is None and size_entry["available"]:
                         size_entry["quantity"] = "In Stock"
+                    elif size_entry["quantity"] is None:
+                        size_entry["quantity"] = 0
+
                     result["sizes"].append(size_entry)
 
         # Fallback: Try regex patterns if JSON parsing failed
@@ -760,9 +1023,25 @@ def scrape_myntra_product(product_id):
             for size in result["sizes"]:
                 size["price"] = result["price"]
 
-        # Check if we got the essential data
+        # Clean up product_name (strip whitespace, handle None)
         if result["product_name"]:
+            result["product_name"] = str(result["product_name"]).strip()
+            if not result["product_name"]:
+                result["product_name"] = None
+
+        # Clean up brand
+        if result["brand"]:
+            result["brand"] = str(result["brand"]).strip()
+            if not result["brand"]:
+                result["brand"] = None
+
+        # Check if we got the essential data (at least price or MRP)
+        # If we have price data, mark as success even if name is missing
+        if result["product_name"] or result["mrp"] or result["price"]:
             result["success"] = True
+            # Use product ID as fallback name if name is missing
+            if not result["product_name"]:
+                result["product_name"] = f"Product {product_id}"
         else:
             # Add methods tried to parsing details
             parsing_details["methods_tried"] = methods_tried
@@ -804,12 +1083,15 @@ def scrape_myntra_product(product_id):
                     f"Available keys: {parsing_details.get('pdp_keys', [])}"
                 )
 
+            # Proxy disabled - using direct local IP
             error_parts.append(
-                "Note: Myntra actively blocks automated requests. This feature works best when running locally."
+                "Note: Using direct connection. Myntra may block cloud server IPs. For production, enable proxy support."
             )
 
             result["error"] = " ".join(error_parts)
             result["debug_info"] = parsing_details
+            result["proxy_enabled"] = False
+            result["proxy_type"] = None
 
         return result
 
@@ -866,10 +1148,20 @@ def fetch_myntra_products(request):
         results = []
         errors = []
 
-        # Rate limiting settings
+        # Rate limiting settings (proxy disabled - using direct local IP)
         BATCH_SIZE = 50  # Process 50 products at a time
         DELAY_BETWEEN_BATCHES = 5  # 5 seconds delay between batches
         MAX_WORKERS = 10  # Max concurrent requests within a batch
+
+        # ScraperAPI code commented out (proxy disabled)
+        # proxy_config = get_proxy_config()
+        # using_scraper_api = (
+        #     proxy_config["enabled"] and proxy_config["type"] == "scraper_api"
+        # )
+        # if using_scraper_api:
+        #     BATCH_SIZE = 10  # Smaller batches for ScraperAPI
+        #     DELAY_BETWEEN_BATCHES = 2  # Less delay needed with proxy
+        #     MAX_WORKERS = 3  # Lower concurrency to avoid timeouts
 
         # Split into batches
         batches = [
