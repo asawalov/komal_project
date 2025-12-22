@@ -420,6 +420,108 @@
         border-left: 3px solid var(--success);
     }
     
+    /* Multiselect styles */
+    .column-multiselect-wrapper {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.25rem;
+        padding: 0.4rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        min-height: 38px;
+        cursor: text;
+        min-width: 200px;
+    }
+    
+    .column-multiselect-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.25rem;
+        padding: 0.15rem 0.4rem;
+        background: var(--accent-primary);
+        color: white;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-family: 'JetBrains Mono', monospace;
+    }
+    
+    .column-multiselect-tag-remove {
+        background: none;
+        border: none;
+        color: white;
+        cursor: pointer;
+        font-size: 0.9rem;
+        line-height: 1;
+        padding: 0;
+        width: 14px;
+        height: 14px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+    }
+    
+    .column-multiselect-tag-remove:hover {
+        background: rgba(255,255,255,0.2);
+        border-radius: 2px;
+    }
+    
+    .column-multiselect-input {
+        flex: 1;
+        min-width: 100px;
+        padding: 0.2rem;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: var(--text-primary);
+        font-size: 0.85rem;
+    }
+    
+    .column-multiselect-dropdown {
+        display: none;
+        position: absolute;
+        top: 100%;
+        left: 0;
+        right: 0;
+        max-height: 200px;
+        overflow-y: auto;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        z-index: 100;
+        margin-top: 4px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    .column-multiselect-option {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        padding: 0.5rem 0.75rem;
+        cursor: pointer;
+        font-size: 0.85rem;
+    }
+    
+    .column-multiselect-option:hover {
+        background: var(--bg-tertiary);
+    }
+    
+    .column-multiselect-option.selected {
+        background: rgba(99, 102, 241, 0.2);
+    }
+    
+    .column-multiselect-option-check {
+        width: 16px;
+        color: var(--success);
+    }
+    
+    .column-multiselect-no-results {
+        padding: 0.75rem;
+        text-align: center;
+        color: var(--text-muted);
+        font-size: 0.85rem;
+    }
+    
     .formula-operator {
         font-size: 1.2rem;
         font-weight: 600;
@@ -1309,6 +1411,210 @@
         
     }
     
+    // Multiselect Autocomplete Class - for selecting multiple columns
+    class ColumnMultiselect {
+        constructor(container, sheetName, selectedValues, onChange, sheetSelector = null) {
+            this.container = container;
+            this.sheetName = sheetName;
+            this.selectedValues = selectedValues || []; // Array of selected values
+            this.onChange = onChange;
+            this.sheetSelector = sheetSelector;
+            this.options = [];
+            this.isOpen = false;
+            
+            this.container.style.position = 'relative';
+            
+            this.render();
+            this.bindEvents();
+        }
+        
+        getSheetName() {
+            if (this.sheetName && sheets && sheets[this.sheetName]) {
+                return this.sheetName;
+            }
+            if (this.sheetSelector && this.sheetSelector.value) {
+                return this.sheetSelector.value;
+            }
+            return this.sheetName || Object.keys(sheets || {})[0] || '';
+        }
+        
+        render() {
+            const currentSheet = this.getSheetName();
+            this.options = getAvailableColumns(currentSheet);
+            
+            const tagsHtml = this.selectedValues.map(val => `
+                <span class="column-multiselect-tag" data-value="${escapeHtml(val)}">
+                    ${escapeHtml(val)}
+                    <button type="button" class="column-multiselect-tag-remove" data-value="${escapeHtml(val)}">×</button>
+                </span>
+            `).join('');
+            
+            this.container.innerHTML = `
+                <div class="column-multiselect-wrapper">
+                    ${tagsHtml}
+                    <input type="text" class="column-multiselect-input" placeholder="${this.selectedValues.length ? 'Add more...' : 'Select columns...'}" autocomplete="off">
+                </div>
+                <div class="column-multiselect-dropdown"></div>
+            `;
+            
+            this.wrapper = this.container.querySelector('.column-multiselect-wrapper');
+            this.input = this.container.querySelector('.column-multiselect-input');
+            this.dropdown = this.container.querySelector('.column-multiselect-dropdown');
+            
+            this.updateDropdownContent('');
+        }
+        
+        updateDropdownContent(filter = '') {
+            const currentSheet = this.getSheetName();
+            this.options = getAvailableColumns(currentSheet);
+            
+            const filterLower = filter.toLowerCase();
+            const filtered = this.options.filter(opt => {
+                const name = String(opt.name || '');
+                return name && name.toLowerCase().includes(filterLower);
+            });
+            
+            if (filtered.length === 0) {
+                this.dropdown.innerHTML = `<div class="column-multiselect-no-results">No columns found</div>`;
+                return;
+            }
+            
+            this.dropdown.innerHTML = filtered.map(opt => {
+                const name = String(opt.name || '');
+                const isSelected = this.selectedValues.includes(name);
+                return `
+                    <div class="column-multiselect-option ${isSelected ? 'selected' : ''} ${opt.isDerived ? 'column-derived' : ''}" data-value="${escapeHtml(name)}">
+                        <span class="column-multiselect-option-check">${isSelected ? '✓' : ''}</span>
+                        <span class="column-multiselect-option-label">${escapeHtml(name)}</span>
+                        ${opt.isDerived ? '<span class="column-multiselect-option-hint">(derived)</span>' : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        bindEvents() {
+            this.wrapper.addEventListener('click', (e) => {
+                if (e.target.classList.contains('column-multiselect-tag-remove')) {
+                    const val = e.target.dataset.value;
+                    this.removeValue(val);
+                    return;
+                }
+                this.input.focus();
+            });
+            
+            this.input.addEventListener('focus', () => {
+                this.showDropdown();
+            });
+            
+            this.input.addEventListener('input', (e) => {
+                this.updateDropdownContent(e.target.value);
+                this.showDropdown();
+            });
+            
+            this.input.addEventListener('keydown', (e) => {
+                if (e.key === 'Escape') {
+                    this.hideDropdown();
+                } else if (e.key === 'Backspace' && !this.input.value && this.selectedValues.length > 0) {
+                    // Remove last tag on backspace if input is empty
+                    this.removeValue(this.selectedValues[this.selectedValues.length - 1]);
+                }
+            });
+            
+            this.dropdown.addEventListener('click', (e) => {
+                const option = e.target.closest('.column-multiselect-option');
+                if (option && option.dataset.value) {
+                    this.toggleValue(option.dataset.value);
+                }
+            });
+            
+            document.addEventListener('click', (e) => {
+                if (!this.container.contains(e.target)) {
+                    this.hideDropdown();
+                }
+            });
+        }
+        
+        showDropdown() {
+            this.updateDropdownContent(this.input ? this.input.value : '');
+            this.dropdown.style.display = 'block';
+            this.dropdown.style.position = 'absolute';
+            this.dropdown.style.top = '100%';
+            this.dropdown.style.left = '0';
+            this.dropdown.style.right = '0';
+            this.dropdown.style.zIndex = '9999';
+            this.dropdown.style.maxHeight = '200px';
+            this.dropdown.style.overflowY = 'auto';
+            this.dropdown.style.background = 'var(--bg-secondary, #1e1e2e)';
+            this.dropdown.style.border = '1px solid var(--border-color, #444)';
+            this.dropdown.style.borderRadius = '6px';
+            this.dropdown.style.boxShadow = '0 4px 12px rgba(0,0,0,0.3)';
+            this.dropdown.style.marginTop = '4px';
+            this.isOpen = true;
+        }
+        
+        hideDropdown() {
+            this.dropdown.style.display = 'none';
+            this.isOpen = false;
+            if (this.input) {
+                this.input.value = '';
+            }
+        }
+        
+        toggleValue(value) {
+            if (this.selectedValues.includes(value)) {
+                this.removeValue(value);
+            } else {
+                this.addValue(value);
+            }
+        }
+        
+        addValue(value) {
+            if (!this.selectedValues.includes(value)) {
+                this.selectedValues.push(value);
+                this.render();
+                this.bindEvents();
+                this.showDropdown();
+                if (this.onChange) {
+                    this.onChange(this.selectedValues);
+                }
+            }
+        }
+        
+        removeValue(value) {
+            this.selectedValues = this.selectedValues.filter(v => v !== value);
+            this.render();
+            this.bindEvents();
+            if (this.onChange) {
+                this.onChange(this.selectedValues);
+            }
+        }
+        
+        getValues() {
+            return this.selectedValues;
+        }
+        
+        setValues(values) {
+            this.selectedValues = values || [];
+            this.render();
+            this.bindEvents();
+        }
+        
+        updateSheet(newSheetName) {
+            this.sheetName = newSheetName;
+            this.selectedValues = [];
+            this.render();
+            this.bindEvents();
+        }
+        
+        refreshOptions() {
+            const currentSheet = this.getSheetName();
+            this.options = getAvailableColumns(currentSheet);
+            if (this.isOpen) {
+                this.updateDropdownContent(this.input ? this.input.value : '');
+            }
+        }
+    }
+    
     // File upload handlers - Multi-file support
     uploadZone.addEventListener('click', () => fileInput.click());
     uploadZone.addEventListener('dragover', (e) => {
@@ -1556,6 +1862,10 @@
             if (def.returnColumnAutocomplete) {
                 const returnSheet = def.lookupParams?.tableSheet || def.xlookupParams?.returnSheet || def.returnColumn?.sheet || Object.keys(sheets)[0];
                 fullRefresh ? def.returnColumnAutocomplete.updateSheet(returnSheet) : def.returnColumnAutocomplete.refreshOptions();
+            }
+            if (def.returnColumnsMultiselect) {
+                const returnSheet = def.lookupParams?.tableSheet || Object.keys(sheets)[0];
+                fullRefresh ? def.returnColumnsMultiselect.updateSheet(returnSheet) : def.returnColumnsMultiselect.refreshOptions();
             }
             if (def.conditionRangeAutocomplete) {
                 fullRefresh ? def.conditionRangeAutocomplete.updateSheet(def.conditionRange?.sheet || Object.keys(sheets)[0]) : def.conditionRangeAutocomplete.refreshOptions();
@@ -2284,15 +2594,20 @@
             });
             
         } else if (funcConfig.operands === 'vlookup' || funcConfig.operands === 'hlookup') {
-            // VLOOKUP/HLOOKUP: lookup_value, table_sheet, return_column, lookup_column
+            // VLOOKUP/HLOOKUP: lookup_value, table_sheet, return_columns (multiselect), lookup_column
             // Enhanced version using column NAMES instead of column numbers
             if (!def.lookupParams) {
                 def.lookupParams = { 
                     tableSheet: Object.keys(sheets)[0] || '', 
-                    returnColumn: '',
+                    returnColumns: [], // Array for multiselect
                     lookupColumn: ''
                 };
             }
+            // Migrate from old returnColumn to returnColumns array
+            if (def.lookupParams.returnColumn && !def.lookupParams.returnColumns?.length) {
+                def.lookupParams.returnColumns = [def.lookupParams.returnColumn];
+            }
+            
             const lookupType = funcConfig.operands === 'vlookup' ? 'column' : 'row';
             const html = `
                 <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem;">
@@ -2313,9 +2628,12 @@
                         <span class="operand-label">Search In Column:</span>
                         <div class="column-autocomplete lookup-column-autocomplete"></div>
                     </div>
-                    <div class="operand-group">
-                        <span class="operand-label">Return Column:</span>
-                        <div class="column-autocomplete return-column-autocomplete"></div>
+                </div>
+                <div class="formula-row" style="flex-wrap: wrap; gap: 0.75rem; margin-top: 0.5rem;">
+                    <div class="operand-group" style="flex: 1;">
+                        <span class="operand-label">Return Columns (select multiple):</span>
+                        <div class="column-multiselect return-columns-multiselect"></div>
+                        <small style="color: var(--text-muted); font-size: 0.75rem;">Each selected column will create a separate output column</small>
                     </div>
                 </div>
             `;
@@ -2325,7 +2643,7 @@
             const column1Container = operandsContainer.querySelector('.column1-autocomplete');
             const tableSheetSelect = operandsContainer.querySelector('.lookup-table-sheet');
             const lookupColumnContainer = operandsContainer.querySelector('.lookup-column-autocomplete');
-            const returnColumnContainer = operandsContainer.querySelector('.return-column-autocomplete');
+            const returnColumnsContainer = operandsContainer.querySelector('.return-columns-multiselect');
             
             // Autocomplete for lookup value column (from source sheet)
             def.column1Autocomplete = new ColumnAutocomplete(
@@ -2356,13 +2674,13 @@
                 tableSheetSelect
             );
             
-            // Autocomplete for return column (in lookup table)
-            def.returnColumnAutocomplete = new ColumnAutocomplete(
-                returnColumnContainer,
+            // Multiselect for return columns (in lookup table)
+            def.returnColumnsMultiselect = new ColumnMultiselect(
+                returnColumnsContainer,
                 tableSheetSelect.value,
-                def.lookupParams.returnColumn,
-                (value) => {
-                    def.lookupParams.returnColumn = value;
+                def.lookupParams.returnColumns || [],
+                (values) => {
+                    def.lookupParams.returnColumns = values;
                     updateFormulaPreview(container, def);
                     hideSamplePreview();
                 },
@@ -2378,9 +2696,9 @@
             
             tableSheetSelect.addEventListener('change', () => {
                 def.lookupParams.tableSheet = tableSheetSelect.value;
-                // Update both lookup and return column autocompletes
+                // Update lookup and return column selectors
                 def.lookupColumnAutocomplete.updateSheet(tableSheetSelect.value);
-                def.returnColumnAutocomplete.updateSheet(tableSheetSelect.value);
+                def.returnColumnsMultiselect.updateSheet(tableSheetSelect.value);
                 updateFormulaPreview(container, def);
                 hideSamplePreview();
             });
@@ -2809,17 +3127,30 @@
         
         // Lookup functions
         if (def.functionType === 'vlookup') {
-            if (!def.operand1.column || !def.lookupParams || !def.lookupParams.returnColumn) return null;
-            // New enhanced syntax: VLOOKUP(lookup_value, "table", "return_column", "lookup_column")
-            const lookupCol = def.lookupParams.lookupColumn || def.operand1.column; // Default to same column name
-            return `=VLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${def.lookupParams.returnColumn}", "${lookupCol}")`;
+            if (!def.operand1.column || !def.lookupParams) return null;
+            const returnCols = def.lookupParams.returnColumns || [];
+            if (returnCols.length === 0) return null;
+            
+            const lookupCol = def.lookupParams.lookupColumn || def.operand1.column;
+            
+            // If multiple return columns, show summary
+            if (returnCols.length > 1) {
+                return `=VLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", [${returnCols.join(', ')}], "${lookupCol}") → Creates ${returnCols.length} columns`;
+            }
+            return `=VLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${returnCols[0]}", "${lookupCol}")`;
         }
         
         if (def.functionType === 'hlookup') {
-            if (!def.operand1.column || !def.lookupParams || !def.lookupParams.returnColumn) return null;
-            // New enhanced syntax: HLOOKUP(lookup_value, "table", "return_row", "lookup_row")
+            if (!def.operand1.column || !def.lookupParams) return null;
+            const returnCols = def.lookupParams.returnColumns || [];
+            if (returnCols.length === 0) return null;
+            
             const lookupCol = def.lookupParams.lookupColumn || def.operand1.column;
-            return `=HLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${def.lookupParams.returnColumn}", "${lookupCol}")`;
+            
+            if (returnCols.length > 1) {
+                return `=HLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", [${returnCols.join(', ')}], "${lookupCol}") → Creates ${returnCols.length} columns`;
+            }
+            return `=HLOOKUP(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${returnCols[0]}", "${lookupCol}")`;
         }
         
         if (def.functionType === 'xlookup') {
@@ -2919,9 +3250,38 @@
                 continue;
             }
             
+            // Handle VLOOKUP/HLOOKUP with multiple return columns
+            if ((def.functionType === 'vlookup' || def.functionType === 'hlookup') && 
+                def.lookupParams?.returnColumns?.length > 0) {
+                
+                const returnCols = def.lookupParams.returnColumns;
+                const lookupCol = def.lookupParams.lookupColumn || def.operand1.column;
+                const funcName = def.functionType.toUpperCase();
+                const targetSheet = def.targetSheet || def.operand1.sheet || Object.keys(sheets)[0];
+                
+                // Create a separate formula for each return column
+                for (const retCol of returnCols) {
+                    const colName = returnCols.length > 1 ? `${def.name}_${retCol}` : def.name;
+                    const formula = `=${funcName}(${def.operand1.column}, "${def.lookupParams.tableSheet}", "${retCol}", "${lookupCol}")`;
+                    
+                    validDefs.push({
+                        name: colName,
+                        formula: formula,
+                        sheet: targetSheet
+                    });
+                }
+                continue;
+            }
+            
             const formula = generateFormula(def);
             if (!formula) {
                 errors.push({ type: 'VALUE', message: `Incomplete formula for column "${def.name}"` });
+                continue;
+            }
+            
+            // Skip formulas that are just previews (contain "→ Creates")
+            if (formula.includes('→ Creates')) {
+                errors.push({ type: 'VALUE', message: `Select at least one return column for "${def.name}"` });
                 continue;
             }
             
