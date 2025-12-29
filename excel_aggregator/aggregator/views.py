@@ -384,52 +384,160 @@ def myntra_scraper(request):
 def extract_sizes_from_html(html_content):
     """Extract sizes array from HTML using regex, including actual stock quantity."""
     sizes = []
+    found_sizes = set()  # Track found sizes to avoid duplicates
 
-    # First, extract basic size info with skuId
-    size_pattern = r'\{"skuId":(\d+),"styleId":\d+,[^}]*"label":"([^"]+)","available":(true|false)[^}]*\}'
+    # Method 1: Try to find and parse the sizes JSON array directly
+    # Look for "sizes":[ pattern and extract individual size objects
+    sizes_array_match = re.search(r'"sizes"\s*:\s*\[', html_content)
+    if sizes_array_match:
+        start_pos = sizes_array_match.end() - 1  # Position of '['
+        
+        # Find matching closing bracket by counting brackets
+        bracket_count = 0
+        end_pos = start_pos
+        in_string = False
+        escape_next = False
+        
+        for i, char in enumerate(html_content[start_pos:], start=start_pos):
+            if escape_next:
+                escape_next = False
+                continue
+            if char == '\\':
+                escape_next = True
+                continue
+            if char == '"' and not escape_next:
+                in_string = not in_string
+                continue
+            if in_string:
+                continue
+            if char == '[':
+                bracket_count += 1
+            elif char == ']':
+                bracket_count -= 1
+                if bracket_count == 0:
+                    end_pos = i + 1
+                    break
+        
+        if end_pos > start_pos:
+            sizes_json_str = html_content[start_pos:end_pos]
+            try:
+                sizes_array = json.loads(sizes_json_str)
+                if isinstance(sizes_array, list):
+                    for size_obj in sizes_array:
+                        if isinstance(size_obj, dict):
+                            label = size_obj.get("label") or size_obj.get("size") or size_obj.get("name") or ""
+                            if label and label not in found_sizes:
+                                found_sizes.add(label)
+                                available = size_obj.get("available", False)
+                                qty = None
+                                
+                                # Method 1: Check sizeSellerData for availableCount (Myntra's structure)
+                                size_seller_data = size_obj.get("sizeSellerData", [])
+                                if isinstance(size_seller_data, list) and size_seller_data:
+                                    # Sum up availableCount from all sellers
+                                    total_qty = 0
+                                    for seller in size_seller_data:
+                                        if isinstance(seller, dict):
+                                            seller_qty = seller.get("availableCount") or seller.get("sellableInventoryCount") or 0
+                                            if isinstance(seller_qty, (int, float)):
+                                                total_qty += int(seller_qty)
+                                    if total_qty > 0:
+                                        qty = total_qty
+                                
+                                # Method 2: Check direct availableCount
+                                if qty is None:
+                                    qty = size_obj.get("availableCount") or size_obj.get("quantity") or size_obj.get("stock")
+                                
+                                # Method 3: Check inventory object
+                                if qty is None:
+                                    inventory = size_obj.get("inventory", {})
+                                    if isinstance(inventory, dict):
+                                        qty = inventory.get("quantity") or inventory.get("availableCount")
+                                
+                                sizes.append({
+                                    "size": str(label),
+                                    "available": bool(available),
+                                    "quantity": qty if qty is not None else ("In Stock" if available else 0),
+                                    "price": None,
+                                    "sku_id": str(size_obj.get("skuId")) if size_obj.get("skuId") else None,
+                                })
+            except json.JSONDecodeError:
+                pass  # Will fall back to regex methods
 
-    for match in re.finditer(size_pattern, html_content):
-        sku_id, label, available = match.groups()
-        sizes.append(
-            {
-                "size": label,
-                "available": available == "true",
-                "quantity": 0,
-                "price": None,
-                "sku_id": sku_id,
-            }
+    # Method 2: If JSON parsing failed, try regex patterns
+    if not sizes:
+        # Pattern to find size entries with skuId and label
+        # Look for patterns like: "skuId":123,"styleId":456,...,"label":"28","available":true
+        size_entries = re.finditer(
+            r'"skuId"\s*:\s*(\d+)[^{]*?"label"\s*:\s*"([^"]+)"[^{]*?"available"\s*:\s*(true|false)',
+            html_content
         )
+        for match in size_entries:
+            sku_id, label, available = match.groups()
+            if label and label not in found_sizes:
+                found_sizes.add(label)
+                sizes.append({
+                    "size": label,
+                    "available": available == "true",
+                    "quantity": 0,
+                    "price": None,
+                    "sku_id": sku_id,
+                })
+
+    # Method 3: Simpler fallback - just find label/available pairs
+    if not sizes:
+        # Find all size-like labels with their availability
+        for match in re.finditer(r'"label"\s*:\s*"([^"]+)"[^}]*?"available"\s*:\s*(true|false)', html_content):
+            label, available = match.groups()
+            # Check if it's a size-like value
+            if label and label not in found_sizes:
+                if (label.isdigit() or 
+                    label.upper() in ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "2XL", "3XL", "4XL", "5XL", 
+                                      "FREE SIZE", "ONE SIZE", "ONESIZE", "FREESIZE"] or
+                    re.match(r"^\d+[A-Z]?$", label)):
+                    found_sizes.add(label)
+                    sizes.append({
+                        "size": label,
+                        "available": available == "true",
+                        "quantity": 0,
+                        "price": None,
+                        "sku_id": None,
+                    })
+
+    # Extract quantity from sizeSellerData if sizes still have no quantity
+    # Pattern: "label":"28"...,"sizeSellerData":[{"availableCount":276,...}]
+    for size in sizes:
+        if size["quantity"] == "In Stock" or (isinstance(size["quantity"], int) and size["quantity"] == 0 and size["available"]):
+            label = size["size"]
+            # Find this size's sizeSellerData in HTML
+            # Look for "label":"XX" and then find sizeSellerData within next 3000 chars
+            label_pattern = rf'"label"\s*:\s*"{re.escape(label)}"'
+            for label_match in re.finditer(label_pattern, html_content):
+                # Get context after the label (up to 3000 chars)
+                context_start = label_match.start()
+                context_end = min(len(html_content), context_start + 3000)
+                context = html_content[context_start:context_end]
+                
+                # Look for sizeSellerData in this context
+                seller_match = re.search(r'"sizeSellerData"\s*:\s*\[([^\]]+)\]', context)
+                if seller_match:
+                    seller_data_str = seller_match.group(1)
+                    # Extract all availableCount values and sum them
+                    counts = re.findall(r'"availableCount"\s*:\s*(\d+)', seller_data_str)
+                    if counts:
+                        total = sum(int(c) for c in counts)
+                        if total > 0:
+                            size["quantity"] = total
+                            break  # Found quantity, stop looking
 
     # Extract quantity by matching label positions with availableCount positions
-    # Each size label is followed by its availableCount in the HTML
-
-    # Find all labels that look like sizes (numbers or size codes)
     size_like_labels = []
     for match in re.finditer(r'"label":"([^"]+)"', html_content):
         label = match.group(1)
-        # Check if it's a size-like value
-        if (
-            label.isdigit()
-            or label
-            in [
-                "XS",
-                "S",
-                "M",
-                "L",
-                "XL",
-                "XXL",
-                "XXXL",
-                "2XL",
-                "3XL",
-                "4XL",
-                "5XL",
-                "Free Size",
-                "One Size",
-                "FREE SIZE",
-                "ONE SIZE",
-            ]
-            or re.match(r"^\d+[A-Z]?$", label)
-        ):  # e.g., 26, 28, 32A, 34B
+        if (label.isdigit() or 
+            label.upper() in ["XS", "S", "M", "L", "XL", "XXL", "XXXL", "2XL", "3XL", "4XL", "5XL",
+                              "FREE SIZE", "ONE SIZE", "ONESIZE", "FREESIZE"] or
+            re.match(r"^\d+[A-Z]?$", label)):
             size_like_labels.append((match.start(), label))
 
     # Find all availableCount values
@@ -441,13 +549,11 @@ def extract_sizes_from_html(html_content):
     # Match each size label with its following availableCount
     size_quantities = {}
     for i, (label_pos, label) in enumerate(size_like_labels):
-        # Find the nearest availableCount after this label
         next_label_pos = (
             size_like_labels[i + 1][0]
             if i + 1 < len(size_like_labels)
             else float("inf")
         )
-
         for count_pos, count in available_counts:
             if label_pos < count_pos < next_label_pos:
                 size_quantities[label] = count
@@ -628,6 +734,8 @@ def scrape_myntra_product(product_id):
         "price": None,
         "mrp": None,
         "discount": None,
+        "rating": None,
+        "rating_count": None,
         "sizes": [],
         "error": None,
     }
@@ -691,48 +799,125 @@ def scrape_myntra_product(product_id):
         if response.status_code == 200:
             try:
                 api_data = response.json()
-                if api_data and "style" in api_data:
-                    style = api_data["style"]
-                    result["product_name"] = style.get("name")
+                # Check if response has style directly or nested
+                style = None
+                if isinstance(api_data, dict):
+                    style = api_data.get("style") or api_data.get("data", {}).get("style") or api_data
+                
+                if style and isinstance(style, dict):
+                    result["product_name"] = style.get("name") or style.get("productName") or style.get("title")
                     result["brand"] = (
                         style.get("brand", {}).get("name")
                         if isinstance(style.get("brand"), dict)
-                        else style.get("brandName")
+                        else style.get("brandName") or (style.get("brand") if isinstance(style.get("brand"), str) else None)
                     )
 
                     price_info = style.get("price", {})
-                    result["mrp"] = price_info.get("mrp")
-                    result["price"] = price_info.get("discounted") or result["mrp"]
-                    result["discount"] = price_info.get("discount", 0)
+                    if isinstance(price_info, dict):
+                        result["mrp"] = price_info.get("mrp") or price_info.get("MRP")
+                        result["price"] = price_info.get("discounted") or price_info.get("sellingPrice") or result["mrp"]
+                        result["discount"] = price_info.get("discount", 0) or price_info.get("discountPercent", 0)
 
-                    # Get sizes
-                    sizes_data = style.get("sizes", [])
+                    # Get rating information - check multiple locations
+                    # First check "ratings" object (plural - Myntra's main structure)
+                    ratings_info = style.get("ratings", {})
+                    if isinstance(ratings_info, dict):
+                        result["rating"] = ratings_info.get("averageRating") or ratings_info.get("average") or ratings_info.get("value")
+                        result["rating_count"] = ratings_info.get("totalCount") or ratings_info.get("count") or ratings_info.get("totalReviews") or ratings_info.get("totalRatings")
+                    
+                    # Also check "rating" object (singular)
+                    if not result["rating"]:
+                        rating_info = style.get("rating", {})
+                        if isinstance(rating_info, dict):
+                            result["rating"] = rating_info.get("average") or rating_info.get("averageRating") or rating_info.get("value")
+                            if not result["rating_count"]:
+                                result["rating_count"] = rating_info.get("count") or rating_info.get("totalCount") or rating_info.get("totalReviews") or rating_info.get("totalRatings")
+                        elif isinstance(rating_info, (int, float)):
+                            result["rating"] = float(rating_info)
+                    
+                    # Try alternative rating locations in style
+                    if not result["rating"]:
+                        result["rating"] = style.get("averageRating") or style.get("ratingValue") or style.get("rating")
+                        if not result["rating_count"]:
+                            result["rating_count"] = style.get("ratingCount") or style.get("reviewCount") or style.get("totalRatings") or style.get("totalCount")
+                    
+                    # Try rating from reviews object
+                    if not result["rating"]:
+                        reviews = style.get("reviews", {})
+                        if isinstance(reviews, dict):
+                            result["rating"] = reviews.get("averageRating") or reviews.get("rating")
+                            if not result["rating_count"]:
+                                result["rating_count"] = reviews.get("count") or reviews.get("totalCount") or reviews.get("totalReviews")
+
+                    # Get sizes - check multiple locations and formats
+                    sizes_data = []
+                    
+                    # Check direct sizes array
+                    if "sizes" in style:
+                        sizes_val = style.get("sizes")
+                        if isinstance(sizes_val, list):
+                            sizes_data = sizes_val
+                        elif isinstance(sizes_val, dict) and "options" in sizes_val:
+                            sizes_data = sizes_val.get("options", [])
+                    
+                    # Check alternative locations
+                    if not sizes_data:
+                        sizes_data = style.get("sizeOptions", []) or style.get("availableSizes", []) or style.get("sizeList", [])
+                    
+                    # Check in inventory or stock object
+                    if not sizes_data:
+                        inventory = style.get("inventory", {})
+                        if isinstance(inventory, dict):
+                            sizes_data = inventory.get("sizes", []) or inventory.get("sizeOptions", [])
+                    
+                    # Process sizes
                     for size_info in sizes_data:
                         if isinstance(size_info, dict):
-                            qty = (
-                                size_info.get("inventory", {}).get("quantity")
-                                if isinstance(size_info.get("inventory"), dict)
-                                else None
-                            )
+                            qty = None
+                            
+                            # Try to get quantity from inventory object
+                            inventory = size_info.get("inventory", {})
+                            if isinstance(inventory, dict):
+                                qty = inventory.get("quantity") or inventory.get("availableCount") or inventory.get("stock")
+                            
+                            # Try direct quantity fields
                             if qty is None:
-                                qty = size_info.get("availableCount")
-                            result["sizes"].append(
-                                {
-                                    "size": size_info.get("label", ""),
-                                    "available": size_info.get("available", False),
-                                    "quantity": qty
-                                    if qty is not None
-                                    else (
-                                        "In Stock" if size_info.get("available") else 0
-                                    ),
-                                    "price": result["price"],
-                                }
+                                qty = size_info.get("availableCount") or size_info.get("stock") or size_info.get("quantity") or size_info.get("inStock")
+                            
+                            # Get size label - try multiple fields
+                            size_label = (
+                                size_info.get("label") 
+                                or size_info.get("size") 
+                                or size_info.get("name") 
+                                or size_info.get("value")
+                                or size_info.get("id")
+                                or ""
                             )
+                            
+                            # Get availability
+                            available = size_info.get("available", False)
+                            if available is None or available == "":
+                                available = qty is not None and qty != 0
+                            
+                            # Only add if we have a valid size label
+                            if size_label:
+                                result["sizes"].append(
+                                    {
+                                        "size": str(size_label),
+                                        "available": bool(available),
+                                        "quantity": qty if qty is not None else ("In Stock" if available else 0),
+                                        "price": result["price"],
+                                    }
+                                )
 
-                    if result["product_name"]:
+                    # Mark as success if we got at least product name or price
+                    if result["product_name"] or result["price"] or result["mrp"]:
                         result["success"] = True
-                        return result
+                        # Don't return early - continue to webpage method to get more complete data
             except json.JSONDecodeError:
+                pass
+            except Exception as e:
+                # Log error but continue to webpage method
                 pass
 
         # Method 2: Try webpage with session (direct connection - proxy disabled)
@@ -921,43 +1106,119 @@ def scrape_myntra_product(product_id):
                             "discount", 0
                         ) or style_price.get("discountPercent", 0)
 
+            # Get rating information from pdpData
+            if not result["rating"]:
+                # First check "ratings" object (plural - Myntra's main structure)
+                ratings_info = pdp_data.get("ratings", {})
+                if isinstance(ratings_info, dict):
+                    result["rating"] = ratings_info.get("averageRating") or ratings_info.get("average") or ratings_info.get("value")
+                    result["rating_count"] = ratings_info.get("totalCount") or ratings_info.get("count") or ratings_info.get("totalReviews")
+                
+                # Also check "rating" object (singular)
+                if not result["rating"]:
+                    rating_info = pdp_data.get("rating", {})
+                    if isinstance(rating_info, dict):
+                        result["rating"] = rating_info.get("average") or rating_info.get("averageRating") or rating_info.get("value")
+                        if not result["rating_count"]:
+                            result["rating_count"] = rating_info.get("count") or rating_info.get("totalCount") or rating_info.get("totalReviews")
+                    elif isinstance(rating_info, (int, float)):
+                        result["rating"] = float(rating_info)
+                
+                # Try alternative rating locations in pdpData
+                if not result["rating"]:
+                    result["rating"] = pdp_data.get("averageRating") or pdp_data.get("ratingValue") or pdp_data.get("rating")
+                    if not result["rating_count"]:
+                        result["rating_count"] = pdp_data.get("ratingCount") or pdp_data.get("reviewCount") or pdp_data.get("totalRatings") or pdp_data.get("totalCount")
+                
+                # Try rating from style object
+                if not result["rating"] and "style" in pdp_data:
+                    style = pdp_data.get("style", {})
+                    if isinstance(style, dict):
+                        # Check "ratings" object first
+                        style_ratings = style.get("ratings", {})
+                        if isinstance(style_ratings, dict):
+                            result["rating"] = style_ratings.get("averageRating") or style_ratings.get("average") or style_ratings.get("value")
+                            if not result["rating_count"]:
+                                result["rating_count"] = style_ratings.get("totalCount") or style_ratings.get("count") or style_ratings.get("totalReviews")
+                        
+                        # Also check "rating" object
+                        if not result["rating"]:
+                            style_rating = style.get("rating", {})
+                            if isinstance(style_rating, dict):
+                                result["rating"] = style_rating.get("average") or style_rating.get("averageRating") or style_rating.get("value")
+                                if not result["rating_count"]:
+                                    result["rating_count"] = style_rating.get("count") or style_rating.get("totalCount") or style_rating.get("totalReviews")
+                            elif isinstance(style_rating, (int, float)):
+                                result["rating"] = float(style_rating)
+                        
+                        if not result["rating"]:
+                            result["rating"] = style.get("averageRating") or style.get("ratingValue") or style.get("rating")
+                            if not result["rating_count"]:
+                                result["rating_count"] = style.get("ratingCount") or style.get("reviewCount") or style.get("totalRatings") or style.get("totalCount")
+
             # Get sizes from pdpData - try multiple locations
             sizes_data = pdp_data.get("sizes", [])
+            
+            # Try alternative size locations
+            if not sizes_data:
+                sizes_data = pdp_data.get("sizeOptions", []) or pdp_data.get("availableSizes", [])
 
             # Try sizes from style object if not found
             if not sizes_data and "style" in pdp_data:
                 style = pdp_data.get("style", {})
                 if isinstance(style, dict):
-                    sizes_data = style.get("sizes", [])
+                    sizes_data = style.get("sizes", []) or style.get("sizeOptions", []) or style.get("availableSizes", [])
 
             for size_info in sizes_data:
                 if isinstance(size_info, dict):
+                    size_label = (
+                        size_info.get("label")
+                        or size_info.get("size")
+                        or size_info.get("name")
+                        or size_info.get("value")
+                        or ""
+                    )
+                    
+                    # Only process if we have a valid size label
+                    if not size_label:
+                        continue
+                    
                     size_entry = {
-                        "size": (
-                            size_info.get("label")
-                            or size_info.get("size")
-                            or size_info.get("name")
-                            or ""
-                        ),
+                        "size": size_label,
                         "available": size_info.get("available", False),
                         "quantity": None,
                         "price": result["price"],
                     }
 
-                    # Try multiple ways to get quantity
-                    inventory = size_info.get("inventory", {})
-                    if isinstance(inventory, dict):
-                        size_entry["quantity"] = (
-                            inventory.get("quantity")
-                            or inventory.get("availableCount")
-                            or inventory.get("stock")
-                        )
+                    # Method 1: Check sizeSellerData for availableCount (Myntra's main structure)
+                    size_seller_data = size_info.get("sizeSellerData", [])
+                    if isinstance(size_seller_data, list) and size_seller_data:
+                        total_qty = 0
+                        for seller in size_seller_data:
+                            if isinstance(seller, dict):
+                                seller_qty = seller.get("availableCount") or seller.get("sellableInventoryCount") or 0
+                                if isinstance(seller_qty, (int, float)):
+                                    total_qty += int(seller_qty)
+                        if total_qty > 0:
+                            size_entry["quantity"] = total_qty
 
+                    # Method 2: Try inventory object
+                    if size_entry["quantity"] is None:
+                        inventory = size_info.get("inventory", {})
+                        if isinstance(inventory, dict):
+                            size_entry["quantity"] = (
+                                inventory.get("quantity")
+                                or inventory.get("availableCount")
+                                or inventory.get("stock")
+                            )
+
+                    # Method 3: Check direct fields
                     if size_entry["quantity"] is None:
                         size_entry["quantity"] = (
                             size_info.get("availableCount")
                             or size_info.get("quantity")
                             or size_info.get("stock")
+                            or size_info.get("inStock")
                         )
 
                     if size_entry["quantity"] is None and size_entry["available"]:
@@ -1005,6 +1266,48 @@ def scrape_myntra_product(product_id):
                 result["price"] = int(price_match.group(1))
             elif result["mrp"]:
                 result["price"] = result["mrp"]
+
+        # Extract rating from HTML if not found
+        if not result["rating"]:
+            # Try multiple rating patterns - check "ratings" object first (Myntra's main structure)
+            rating_patterns = [
+                r'"ratings"\s*:\s*\{[^}]*"averageRating"\s*:\s*([\d.]+)',  # Myntra's main ratings object
+                r'"rating"\s*:\s*\{[^}]*"average"\s*:\s*([\d.]+)',
+                r'"averageRating"\s*:\s*([\d.]+)',
+                r'"ratingValue"\s*:\s*([\d.]+)',
+                r'"rating"\s*:\s*([\d.]+)',
+                r'<meta[^>]*itemprop="ratingValue"[^>]*content="([\d.]+)"',
+                r'data-rating="([\d.]+)"',
+            ]
+            for pattern in rating_patterns:
+                match = re.search(pattern, html_content)
+                if match:
+                    try:
+                        result["rating"] = float(match.group(1))
+                        break
+                    except ValueError:
+                        continue
+        
+        # Try to get rating count - always try even if rating was found from API
+        if not result["rating_count"]:
+            rating_count_patterns = [
+                r'"ratings"\s*:\s*\{[^}]*"totalCount"\s*:\s*(\d+)',  # Myntra's main ratings object
+                r'"totalCount"\s*:\s*(\d+)',
+                r'"rating"\s*:\s*\{[^}]*"count"\s*:\s*(\d+)',
+                r'"ratingCount"\s*:\s*(\d+)',
+                r'"reviewCount"\s*:\s*(\d+)',
+                r'"totalRatings"\s*:\s*(\d+)',
+                r'"userRatingCount"\s*:\s*(\d+)',
+                r'<meta[^>]*itemprop="reviewCount"[^>]*content="(\d+)"',
+            ]
+            for pattern in rating_count_patterns:
+                match = re.search(pattern, html_content)
+                if match:
+                    try:
+                        result["rating_count"] = int(match.group(1))
+                        break
+                    except ValueError:
+                        continue
 
         # Calculate discount if not found
         if (
@@ -1223,6 +1526,133 @@ def fetch_myntra_products(request):
     except Exception as e:
         import traceback
 
+        traceback.print_exc()
+        return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+
+def _calculate_discount_percentage(price, mrp):
+    """Calculate discount percentage from price and MRP."""
+    if mrp and price and mrp > price:
+        return round(((mrp - price) / mrp) * 100)
+    return 0
+
+
+def _extract_brand_products(product_list):
+    """Extract and format products from Myntra data."""
+    products = []
+    for item in product_list:
+        price = item.get("price", 0)
+        mrp = item.get("mrp", 0)
+        # Calculate actual discount percentage
+        discount = _calculate_discount_percentage(price, mrp)
+        
+        product = {
+            "product_id": str(item.get("productId", "")),
+            "product_name": item.get("productName", ""),
+            "brand": item.get("brand", ""),
+            "price": price,
+            "mrp": mrp,
+            "discount": discount,
+            "rating": item.get("rating", 0) or 0,
+            "rating_count": item.get("ratingCount", 0) or 0,
+            "image": item.get("searchImage", ""),
+            "url": f"https://www.myntra.com/{item.get('landingPageUrl', '')}",
+            "category": item.get("category", ""),
+            "sizes": item.get("sizes", ""),
+        }
+        products.append(product)
+    return products
+
+
+@require_http_methods(["POST"])
+def search_myntra_brand(request):
+    """Search Myntra for top-rated products by brand name."""
+    try:
+        data = json.loads(request.body)
+        brand_name = data.get("brand", "").strip()
+        sort_by = data.get("sort_by", "rating")  # rating, popularity, price_asc, price_desc
+        num_products = min(data.get("num_products", 20), 50)  # Max 50 products
+        
+        if not brand_name:
+            return JsonResponse(
+                {"success": False, "error": "Brand name is required"}, status=400
+            )
+        
+        # Clean brand name for URL (replace spaces with hyphens)
+        brand_slug = brand_name.lower().replace(" ", "-").replace("&", "and")
+        
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        
+        products = []
+        
+        # Primary method: Scrape the brand page directly (more reliable)
+        brand_url = f"https://www.myntra.com/{brand_slug}"
+        response = requests.get(brand_url, headers=headers, timeout=30)
+        
+        if response.status_code == 200:
+            html_content = response.text
+            
+            # Find the window.__myx object which contains the product data
+            myx_match = re.search(r'window\.__myx\s*=\s*(\{.*?\});?\s*</script>', html_content, re.DOTALL)
+            if myx_match:
+                try:
+                    myx_data = json.loads(myx_match.group(1))
+                    search_data = myx_data.get("searchData", {})
+                    results = search_data.get("results", {})
+                    product_list = results.get("products", [])
+                    products = _extract_brand_products(product_list)
+                except Exception:
+                    pass
+            
+            # Alternative: Look for products in other script patterns
+            if not products:
+                search_match = re.search(r'"products"\s*:\s*(\[.*?\])\s*,\s*"totalCount"', html_content, re.DOTALL)
+                if search_match:
+                    try:
+                        product_list = json.loads(search_match.group(1))
+                        products = _extract_brand_products(product_list)
+                    except Exception:
+                        pass
+        
+        if products:
+            # Apply sorting
+            if sort_by == "rating":
+                products.sort(key=lambda x: (x.get("rating") or 0, x.get("rating_count") or 0), reverse=True)
+            elif sort_by == "popularity":
+                products.sort(key=lambda x: x.get("rating_count") or 0, reverse=True)
+            elif sort_by == "price_asc":
+                products.sort(key=lambda x: x.get("price") or 0)
+            elif sort_by == "price_desc":
+                products.sort(key=lambda x: x.get("price") or 0, reverse=True)
+            elif sort_by == "discount":
+                products.sort(key=lambda x: x.get("discount") or 0, reverse=True)
+            
+            # Limit to requested number
+            products = products[:num_products]
+            
+            return JsonResponse({
+                "success": True,
+                "brand": brand_name,
+                "total_found": len(products),
+                "products": products
+            })
+        
+        return JsonResponse({
+            "success": False,
+            "error": f"No products found for brand '{brand_name}'. Please check the brand name and try again."
+        }, status=404)
+        
+    except requests.Timeout:
+        return JsonResponse({
+            "success": False,
+            "error": "Request timed out. Please try again."
+        }, status=408)
+    except Exception as e:
+        import traceback
         traceback.print_exc()
         return JsonResponse({"success": False, "error": str(e)}, status=400)
 

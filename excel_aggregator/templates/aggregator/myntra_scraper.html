@@ -4,8 +4,8 @@
 
 {% block content %}
 <header class="header">
-    <h1>🛍️ Myntra Stock Checker</h1>
-    <p>Enter Myntra product IDs to check stock, sizes, and prices</p>
+    <h1>🛍️ Myntra Product Tools</h1>
+    <p>Check stock details or discover top-rated products by brand</p>
 </header>
 
 <!-- Navigation -->
@@ -15,150 +15,266 @@
     <a href="/formula/" class="btn btn-secondary" style="margin-left: 0.5rem;">🧮 Formula Columns</a>
 </div>
 
-<!-- Input Section -->
-<div class="card" id="input-card">
-    <div class="card-title">
-        <span class="step-number">1</span>
-        Enter Product IDs
+<!-- Tab Navigation -->
+<div class="tab-container">
+    <div class="tab-nav">
+        <button class="tab-btn active" data-tab="stock-checker">
+            📦 Stock Checker
+        </button>
+        <button class="tab-btn" data-tab="brand-search">
+            ⭐ Top Products by Brand
+        </button>
     </div>
-    
-    <div id="error-container" class="alert alert-error hidden">
-        <span>⚠️</span>
-        <span id="error-message"></span>
-    </div>
-    
-    <p class="section-label">Enter Myntra product IDs (one per line, or comma-separated). Large batches are processed with delays to avoid blocking.</p>
-    <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
-        Examples: <code>38461906</code> or <code>www.myntra.com/38461906</code>
-    </p>
-    
-    <div class="input-section">
-        <textarea 
-            id="product-ids-input" 
-            class="ids-textarea" 
-            placeholder="Enter product IDs here...
+</div>
+
+<!-- Tab Content: Stock Checker -->
+<div class="tab-content active" id="stock-checker">
+    <!-- Input Section -->
+    <div class="card" id="input-card">
+        <div class="card-title">
+            <span class="step-number">1</span>
+            Enter Product IDs
+        </div>
+        
+        <div id="error-container" class="alert alert-error hidden">
+            <span>⚠️</span>
+            <span id="error-message"></span>
+        </div>
+        
+        <p class="section-label">Enter Myntra product IDs (one per line, or comma-separated). Large batches are processed with delays to avoid blocking.</p>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1rem;">
+            Examples: <code>38461906</code> or <code>www.myntra.com/38461906</code>
+        </p>
+        
+        <div class="input-section">
+            <textarea 
+                id="product-ids-input" 
+                class="ids-textarea" 
+                placeholder="Enter product IDs here...
 
 38461906
 38461907
 www.myntra.com/38461908"
-            rows="8"
-        ></textarea>
+                rows="8"
+            ></textarea>
+            
+            <div class="input-info">
+                <span id="id-count">0 IDs entered</span>
+                <span class="max-info">(50 per batch with 5s delay)</span>
+            </div>
+        </div>
         
-        <div class="input-info">
-            <span id="id-count">0 IDs entered</span>
-            <span class="max-info">(50 per batch with 5s delay)</span>
+        <div class="btn-group" style="margin-top: 1.5rem;">
+            <button class="btn btn-primary btn-lg" id="fetch-btn">
+                🔍 Fetch Product Details
+            </button>
+            <button class="btn btn-secondary" id="clear-btn">
+                Clear All
+            </button>
         </div>
     </div>
-    
-    <div class="btn-group" style="margin-top: 1.5rem;">
-        <button class="btn btn-primary btn-lg" id="fetch-btn">
-            🔍 Fetch Product Details
-        </button>
-        <button class="btn btn-secondary" id="clear-btn">
-            Clear All
-        </button>
-    </div>
-</div>
 
-<!-- Loading -->
-<div class="card hidden" id="loading-card">
-    <div class="loading">
-        <div class="spinner"></div>
-        <span id="loading-text">Fetching product details...</span>
+    <!-- Loading -->
+    <div class="card hidden" id="loading-card">
+        <div class="loading">
+            <div class="spinner"></div>
+            <span id="loading-text">Fetching product details...</span>
+        </div>
+        <div class="progress-bar">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <p id="progress-text" style="text-align: center; color: var(--text-muted); margin-top: 0.5rem;">0 / 0 products</p>
     </div>
-    <div class="progress-bar">
-        <div class="progress-fill" id="progress-fill"></div>
-    </div>
-    <p id="progress-text" style="text-align: center; color: var(--text-muted); margin-top: 0.5rem;">0 / 0 products</p>
-</div>
 
-<!-- Results Summary -->
-<div class="card hidden" id="summary-card">
-    <div class="card-title">
-        <span class="step-number">2</span>
-        Results Summary
-    </div>
-    
-    <div class="results-summary">
-        <div class="results-summary-item">
-            <span class="label">Total Requested:</span>
-            <span class="value" id="total-requested">0</span>
+    <!-- Results Summary -->
+    <div class="card hidden" id="summary-card">
+        <div class="card-title">
+            <span class="step-number">2</span>
+            Results Summary
         </div>
-        <div class="results-summary-item">
-            <span class="label">Successful:</span>
-            <span class="value success-text" id="total-success">0</span>
-        </div>
-        <div class="results-summary-item">
-            <span class="label">Failed:</span>
-            <span class="value error-text" id="total-failed">0</span>
-        </div>
-    </div>
-</div>
-
-<!-- Results Table -->
-<div class="card hidden" id="results-card">
-    <div class="card-title">
-        <span class="step-number">3</span>
-        Product Details
-    </div>
-    
-    <!-- Filter and Controls -->
-    <div class="filter-controls">
-        <div class="filter-row">
-            <div class="filter-input-container">
-                <input type="text" id="filter-input" class="filter-input" placeholder="🔍 Filter by Product ID...">
-                <button class="filter-clear-btn hidden" id="filter-clear-btn">✕</button>
+        
+        <div class="results-summary">
+            <div class="results-summary-item">
+                <span class="label">Total Requested:</span>
+                <span class="value" id="total-requested">0</span>
             </div>
-            <div class="filter-status">
-                <select id="status-filter" class="status-select">
-                    <option value="all">All Products</option>
-                    <option value="success">Successful Only</option>
-                    <option value="failed">Failed Only</option>
-                    <option value="in-stock">In Stock</option>
-                    <option value="out-of-stock">Out of Stock</option>
-                </select>
+            <div class="results-summary-item">
+                <span class="label">Successful:</span>
+                <span class="value success-text" id="total-success">0</span>
+            </div>
+            <div class="results-summary-item">
+                <span class="label">Failed:</span>
+                <span class="value error-text" id="total-failed">0</span>
             </div>
         </div>
-        <div class="btn-group" style="margin-top: 1rem;">
-            <button class="btn btn-secondary btn-sm" id="export-csv-btn">
+    </div>
+
+    <!-- Results Table -->
+    <div class="card hidden" id="results-card">
+        <div class="card-title">
+            <span class="step-number">3</span>
+            Product Details
+        </div>
+        
+        <!-- Filter and Controls -->
+        <div class="filter-controls">
+            <div class="filter-row">
+                <div class="filter-input-container">
+                    <input type="text" id="filter-input" class="filter-input" placeholder="🔍 Filter by Product ID...">
+                    <button class="filter-clear-btn hidden" id="filter-clear-btn">✕</button>
+                </div>
+                <div class="filter-status">
+                    <select id="status-filter" class="status-select">
+                        <option value="all">All Products</option>
+                        <option value="success">Successful Only</option>
+                        <option value="failed">Failed Only</option>
+                        <option value="in-stock">In Stock</option>
+                        <option value="out-of-stock">Out of Stock</option>
+                    </select>
+                </div>
+            </div>
+            <div class="btn-group" style="margin-top: 1rem;">
+                <button class="btn btn-secondary btn-sm" id="export-csv-btn">
+                    📥 Export to CSV
+                </button>
+                <button class="btn btn-secondary btn-sm" id="expand-all-btn">
+                    Expand All
+                </button>
+                <button class="btn btn-secondary btn-sm" id="collapse-all-btn">
+                    Collapse All
+                </button>
+            </div>
+        </div>
+        
+        <!-- Filter Info -->
+        <div class="filter-info" id="filter-info">
+            <span id="showing-count">Showing 0 of 0 products</span>
+        </div>
+        
+        <!-- Results Container -->
+        <div id="results-container">
+            <!-- Results will be populated here -->
+        </div>
+        
+        <!-- Pagination -->
+        <div class="pagination" id="pagination">
+            <button class="page-btn" id="prev-btn" disabled>← Previous</button>
+            <div class="page-numbers" id="page-numbers"></div>
+            <button class="page-btn" id="next-btn" disabled>Next →</button>
+        </div>
+        
+        <!-- Page Size Selector -->
+        <div class="page-size-selector">
+            <span>Show:</span>
+            <select id="page-size-select" class="page-size-select">
+                <option value="10" selected>10</option>
+                <option value="25">25</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+            </select>
+            <span>per page</span>
+        </div>
+    </div>
+</div>
+
+<!-- Tab Content: Brand Search -->
+<div class="tab-content" id="brand-search">
+    <!-- Brand Search Input -->
+    <div class="card" id="brand-input-card">
+        <div class="card-title">
+            <span class="step-number">1</span>
+            Search Products by Brand
+        </div>
+        
+        <div id="brand-error-container" class="alert alert-error hidden">
+            <span>⚠️</span>
+            <span id="brand-error-message"></span>
+        </div>
+        
+        <p class="section-label">Enter a brand name to find their top-rated products on Myntra</p>
+        
+        <div class="brand-search-form">
+            <div class="brand-input-row">
+                <div class="brand-input-group">
+                    <label for="brand-name-input">Brand Name</label>
+                    <input 
+                        type="text" 
+                        id="brand-name-input" 
+                        class="brand-input" 
+                        placeholder="e.g., Nike, Puma, H&M, Levis..."
+                    >
+                </div>
+                <div class="brand-input-group">
+                    <label for="sort-by-select">Sort By</label>
+                    <select id="sort-by-select" class="sort-select">
+                        <option value="rating" selected>⭐ Highest Rated</option>
+                        <option value="popularity">🔥 Most Popular</option>
+                        <option value="discount">💰 Best Discount</option>
+                        <option value="price_asc">💵 Price: Low to High</option>
+                        <option value="price_desc">💵 Price: High to Low</option>
+                        <option value="new">🆕 Newest First</option>
+                    </select>
+                </div>
+                <div class="brand-input-group">
+                    <label for="num-products-select">Show</label>
+                    <select id="num-products-select" class="num-select">
+                        <option value="10">10 products</option>
+                        <option value="20" selected>20 products</option>
+                        <option value="30">30 products</option>
+                        <option value="50">50 products</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="popular-brands">
+                <span class="popular-label">Popular brands:</span>
+                <button class="brand-chip" data-brand="Nike">Nike</button>
+                <button class="brand-chip" data-brand="Puma">Puma</button>
+                <button class="brand-chip" data-brand="Adidas">Adidas</button>
+                <button class="brand-chip" data-brand="H&M">H&M</button>
+                <button class="brand-chip" data-brand="Levis">Levis</button>
+                <button class="brand-chip" data-brand="Roadster">Roadster</button>
+                <button class="brand-chip" data-brand="Mango">Mango</button>
+                <button class="brand-chip" data-brand="ONLY">ONLY</button>
+            </div>
+            
+            <div class="btn-group" style="margin-top: 1.5rem;">
+                <button class="btn btn-primary btn-lg" id="brand-search-btn">
+                    🔍 Find Top Products
+                </button>
+                <button class="btn btn-secondary" id="brand-clear-btn">
+                    Clear
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Brand Loading -->
+    <div class="card hidden" id="brand-loading-card">
+        <div class="loading">
+            <div class="spinner"></div>
+            <span id="brand-loading-text">Searching for products...</span>
+        </div>
+    </div>
+
+    <!-- Brand Results -->
+    <div class="card hidden" id="brand-results-card">
+        <div class="card-title">
+            <span class="step-number">2</span>
+            <span id="brand-results-title">Top Rated Products</span>
+        </div>
+        
+        <div class="brand-results-header">
+            <span id="brand-results-count">0 products found</span>
+            <button class="btn btn-secondary btn-sm" id="export-brand-csv-btn">
                 📥 Export to CSV
             </button>
-            <button class="btn btn-secondary btn-sm" id="expand-all-btn">
-                Expand All
-            </button>
-            <button class="btn btn-secondary btn-sm" id="collapse-all-btn">
-                Collapse All
-            </button>
         </div>
-    </div>
-    
-    <!-- Filter Info -->
-    <div class="filter-info" id="filter-info">
-        <span id="showing-count">Showing 0 of 0 products</span>
-    </div>
-    
-    <!-- Results Container -->
-    <div id="results-container">
-        <!-- Results will be populated here -->
-    </div>
-    
-    <!-- Pagination -->
-    <div class="pagination" id="pagination">
-        <button class="page-btn" id="prev-btn" disabled>← Previous</button>
-        <div class="page-numbers" id="page-numbers"></div>
-        <button class="page-btn" id="next-btn" disabled>Next →</button>
-    </div>
-    
-    <!-- Page Size Selector -->
-    <div class="page-size-selector">
-        <span>Show:</span>
-        <select id="page-size-select" class="page-size-select">
-            <option value="10" selected>10</option>
-            <option value="25">25</option>
-            <option value="50">50</option>
-            <option value="100">100</option>
-        </select>
-        <span>per page</span>
+        
+        <!-- Product Grid -->
+        <div class="brand-products-grid" id="brand-products-grid">
+            <!-- Products will be populated here -->
+        </div>
     </div>
 </div>
 
@@ -167,6 +283,351 @@ www.myntra.com/38461908"
 
 {% block extra_css %}
 <style>
+    /* Tab Styles */
+    .tab-container {
+        margin-bottom: 1.5rem;
+    }
+    
+    .tab-nav {
+        display: flex;
+        gap: 0.5rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        padding: 0.5rem;
+    }
+    
+    .tab-btn {
+        flex: 1;
+        padding: 1rem 1.5rem;
+        background: transparent;
+        border: none;
+        border-radius: 8px;
+        color: var(--text-secondary);
+        font-size: 1rem;
+        font-weight: 500;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+    }
+    
+    .tab-btn:hover {
+        background: var(--bg-tertiary);
+        color: var(--text-primary);
+    }
+    
+    .tab-btn.active {
+        background: var(--gradient-1);
+        color: white;
+        box-shadow: 0 2px 10px rgba(99, 102, 241, 0.3);
+    }
+    
+    .tab-content {
+        display: none;
+    }
+    
+    .tab-content.active {
+        display: block;
+        animation: fadeIn 0.3s ease;
+    }
+    
+    @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(10px); }
+        to { opacity: 1; transform: translateY(0); }
+    }
+    
+    /* Brand Search Styles */
+    .brand-search-form {
+        margin-top: 1rem;
+    }
+    
+    .brand-input-row {
+        display: grid;
+        grid-template-columns: 2fr 1fr 1fr;
+        gap: 1rem;
+    }
+    
+    @media (max-width: 768px) {
+        .brand-input-row {
+            grid-template-columns: 1fr;
+        }
+    }
+    
+    .brand-input-group {
+        display: flex;
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+    
+    .brand-input-group label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        font-weight: 500;
+    }
+    
+    .brand-input {
+        padding: 0.875rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 1rem;
+        transition: border-color 0.2s ease;
+    }
+    
+    .brand-input:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .brand-input::placeholder {
+        color: var(--text-muted);
+    }
+    
+    .sort-select, .num-select {
+        padding: 0.875rem 1rem;
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-primary);
+        font-size: 0.95rem;
+        cursor: pointer;
+    }
+    
+    .sort-select:focus, .num-select:focus {
+        outline: none;
+        border-color: var(--accent-primary);
+    }
+    
+    .popular-brands {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        margin-top: 1.25rem;
+        align-items: center;
+    }
+    
+    .popular-label {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        margin-right: 0.5rem;
+    }
+    
+    .brand-chip {
+        padding: 0.5rem 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 20px;
+        color: var(--text-secondary);
+        font-size: 0.85rem;
+        cursor: pointer;
+        transition: all 0.2s ease;
+    }
+    
+    .brand-chip:hover {
+        background: rgba(99, 102, 241, 0.1);
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+    }
+    
+    /* Brand Results */
+    .brand-results-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 1.5rem;
+        padding-bottom: 1rem;
+        border-bottom: 1px solid var(--border-color);
+    }
+    
+    #brand-results-count {
+        color: var(--text-muted);
+        font-size: 0.95rem;
+    }
+    
+    .brand-products-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+        gap: 1.25rem;
+    }
+    
+    .brand-product-card {
+        background: var(--bg-secondary);
+        border: 1px solid var(--border-color);
+        border-radius: 12px;
+        overflow: hidden;
+        transition: all 0.2s ease;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .brand-product-card:hover {
+        border-color: rgba(99, 102, 241, 0.4);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 25px rgba(0, 0, 0, 0.2);
+    }
+    
+    .brand-product-image {
+        position: relative;
+        width: 100%;
+        aspect-ratio: 3/4;
+        background: var(--bg-tertiary);
+        overflow: hidden;
+    }
+    
+    .brand-product-image img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        transition: transform 0.3s ease;
+    }
+    
+    .brand-product-card:hover .brand-product-image img {
+        transform: scale(1.05);
+    }
+    
+    .brand-product-rank {
+        position: absolute;
+        top: 0.75rem;
+        left: 0.75rem;
+        background: var(--gradient-1);
+        color: white;
+        font-weight: 700;
+        font-size: 0.85rem;
+        padding: 0.35rem 0.75rem;
+        border-radius: 20px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    }
+    
+    .brand-product-rating-badge {
+        position: absolute;
+        top: 0.75rem;
+        right: 0.75rem;
+        background: rgba(0, 0, 0, 0.8);
+        color: #fbbf24;
+        font-weight: 600;
+        font-size: 0.8rem;
+        padding: 0.35rem 0.65rem;
+        border-radius: 6px;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
+    .brand-product-discount {
+        position: absolute;
+        bottom: 0.75rem;
+        left: 0.75rem;
+        background: #ef4444;
+        color: white;
+        font-weight: 600;
+        font-size: 0.8rem;
+        padding: 0.35rem 0.65rem;
+        border-radius: 4px;
+    }
+    
+    .brand-product-info {
+        padding: 1rem;
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+    }
+    
+    .brand-product-brand {
+        font-size: 0.8rem;
+        color: var(--accent-tertiary);
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+        margin-bottom: 0.25rem;
+    }
+    
+    .brand-product-name {
+        font-size: 0.95rem;
+        color: var(--text-primary);
+        font-weight: 500;
+        line-height: 1.4;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        margin-bottom: 0.5rem;
+        flex: 1;
+    }
+    
+    .brand-product-category {
+        font-size: 0.75rem;
+        color: var(--text-muted);
+        margin-bottom: 0.75rem;
+    }
+    
+    .brand-product-price-row {
+        display: flex;
+        align-items: baseline;
+        gap: 0.5rem;
+        margin-bottom: 0.5rem;
+    }
+    
+    .brand-product-price {
+        font-size: 1.1rem;
+        font-weight: 700;
+        color: var(--text-primary);
+    }
+    
+    .brand-product-mrp {
+        font-size: 0.85rem;
+        color: var(--text-muted);
+        text-decoration: line-through;
+    }
+    
+    .brand-product-rating-row {
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+        margin-bottom: 0.75rem;
+    }
+    
+    .brand-product-rating {
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+        font-size: 0.85rem;
+        color: #fbbf24;
+        font-weight: 600;
+    }
+    
+    .brand-product-reviews {
+        font-size: 0.8rem;
+        color: var(--text-muted);
+    }
+    
+    .brand-product-link {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.5rem;
+        padding: 0.75rem 1rem;
+        background: var(--bg-tertiary);
+        border: 1px solid var(--border-color);
+        border-radius: 8px;
+        color: var(--text-secondary);
+        text-decoration: none;
+        font-size: 0.85rem;
+        font-weight: 500;
+        transition: all 0.2s ease;
+        margin-top: auto;
+    }
+    
+    .brand-product-link:hover {
+        background: rgba(99, 102, 241, 0.1);
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+    }
+
+    /* Existing Styles */
     .ids-textarea {
         width: 100%;
         padding: 1rem;
@@ -454,6 +915,15 @@ www.myntra.com/38461908"
         margin-top: 0.25rem;
     }
     
+    .product-rating {
+        font-size: 0.85rem;
+        color: var(--accent-secondary);
+        margin-top: 0.25rem;
+        display: flex;
+        align-items: center;
+        gap: 0.25rem;
+    }
+    
     .product-price-info {
         text-align: right;
         flex-shrink: 0;
@@ -593,6 +1063,25 @@ www.myntra.com/38461908"
 {% block extra_js %}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
+    // Tab switching
+    const tabBtns = document.querySelectorAll('.tab-btn');
+    const tabContents = document.querySelectorAll('.tab-content');
+    
+    tabBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+            const tabId = btn.dataset.tab;
+            
+            tabBtns.forEach(b => b.classList.remove('active'));
+            tabContents.forEach(c => c.classList.remove('active'));
+            
+            btn.classList.add('active');
+            document.getElementById(tabId).classList.add('active');
+        });
+    });
+
+    // ==========================================
+    // Stock Checker (existing functionality)
+    // ==========================================
     const productIdsInput = document.getElementById('product-ids-input');
     const idCount = document.getElementById('id-count');
     const fetchBtn = document.getElementById('fetch-btn');
@@ -952,6 +1441,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="product-id">${productIdHtml}</div>
                         <div class="product-name">${escapeHtml(product.product_name && product.product_name.trim() ? product.product_name : 'Unknown Product')}</div>
                         ${product.brand && product.brand.trim() ? `<div class="product-brand">${escapeHtml(product.brand)}</div>` : ''}
+                        ${product.rating ? `<div class="product-rating">⭐ ${product.rating.toFixed(1)}${product.rating_count ? ` (${product.rating_count.toLocaleString()} reviews)` : ''}</div>` : ''}
                     </div>
                     <div class="product-price-info">
                         ${product.price ? `<div class="product-price">₹${product.price.toLocaleString()}</div>` : ''}
@@ -1030,7 +1520,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const dataToExport = filteredResults.length > 0 ? filteredResults : allResults;
         if (dataToExport.length === 0) return;
         
-        const rows = [['Product ID', 'Product Name', 'Brand', 'Price', 'MRP', 'Discount', 'Size', 'Available', 'Stock Quantity', 'URL', 'Error']];
+        const rows = [['Product ID', 'Product Name', 'Brand', 'Price', 'MRP', 'Discount', 'Rating', 'Rating Count', 'Size', 'Available', 'Stock Quantity', 'URL', 'Error']];
         
         for (const product of dataToExport) {
             if (product.success && product.sizes.length > 0) {
@@ -1042,6 +1532,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         product.price || '',
                         product.mrp || '',
                         product.discount ? `${product.discount}%` : '',
+                        product.rating ? product.rating.toFixed(1) : '',
+                        product.rating_count || '',
                         size.size,
                         size.available ? 'Yes' : 'No',
                         typeof size.quantity === 'number' ? size.quantity : (size.available ? 'Available' : 'Out of Stock'),
@@ -1057,6 +1549,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     product.price || '',
                     product.mrp || '',
                     product.discount ? `${product.discount}%` : '',
+                    product.rating ? product.rating.toFixed(1) : '',
+                    product.rating_count || '',
                     '',
                     '',
                     '',
@@ -1089,6 +1583,192 @@ document.addEventListener('DOMContentLoaded', function() {
     
     function hideError() {
         errorContainer.classList.add('hidden');
+    }
+
+    // ==========================================
+    // Brand Search (new functionality)
+    // ==========================================
+    const brandNameInput = document.getElementById('brand-name-input');
+    const sortBySelect = document.getElementById('sort-by-select');
+    const numProductsSelect = document.getElementById('num-products-select');
+    const brandSearchBtn = document.getElementById('brand-search-btn');
+    const brandClearBtn = document.getElementById('brand-clear-btn');
+    const brandErrorContainer = document.getElementById('brand-error-container');
+    const brandErrorMessage = document.getElementById('brand-error-message');
+    const brandLoadingCard = document.getElementById('brand-loading-card');
+    const brandResultsCard = document.getElementById('brand-results-card');
+    const brandResultsTitle = document.getElementById('brand-results-title');
+    const brandResultsCount = document.getElementById('brand-results-count');
+    const brandProductsGrid = document.getElementById('brand-products-grid');
+    const exportBrandCsvBtn = document.getElementById('export-brand-csv-btn');
+    const brandChips = document.querySelectorAll('.brand-chip');
+    
+    let brandResults = [];
+    
+    // Brand chip click
+    brandChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            brandNameInput.value = chip.dataset.brand;
+            searchBrand();
+        });
+    });
+    
+    // Brand search
+    brandSearchBtn.addEventListener('click', searchBrand);
+    brandNameInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchBrand();
+    });
+    
+    async function searchBrand() {
+        const brandName = brandNameInput.value.trim();
+        
+        if (!brandName) {
+            showBrandError('Please enter a brand name');
+            return;
+        }
+        
+        hideBrandError();
+        brandLoadingCard.classList.remove('hidden');
+        brandResultsCard.classList.add('hidden');
+        brandSearchBtn.disabled = true;
+        
+        try {
+            const response = await fetch('/myntra/brand-search/', {
+                method: 'POST',
+                body: JSON.stringify({
+                    brand: brandName,
+                    sort_by: sortBySelect.value,
+                    num_products: parseInt(numProductsSelect.value)
+                }),
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRFToken': csrfToken
+                }
+            });
+            
+            const data = await response.json();
+            
+            if (data.success) {
+                brandResults = data.products;
+                brandResultsTitle.textContent = `Top Products from ${escapeHtml(data.brand)}`;
+                brandResultsCount.textContent = `${data.total_found} products found`;
+                renderBrandResults();
+                brandResultsCard.classList.remove('hidden');
+            } else {
+                showBrandError(data.error || 'Failed to search brand');
+            }
+        } catch (error) {
+            showBrandError('Failed to search: ' + error.message);
+            console.error(error);
+        } finally {
+            brandLoadingCard.classList.add('hidden');
+            brandSearchBtn.disabled = false;
+        }
+    }
+    
+    function renderBrandResults() {
+        brandProductsGrid.innerHTML = '';
+        
+        if (brandResults.length === 0) {
+            brandProductsGrid.innerHTML = `
+                <div class="no-results" style="grid-column: 1/-1;">
+                    <div class="icon">🔍</div>
+                    <p>No products found for this brand</p>
+                </div>
+            `;
+            return;
+        }
+        
+        brandResults.forEach((product, index) => {
+            const card = createBrandProductCard(product, index + 1);
+            brandProductsGrid.appendChild(card);
+        });
+    }
+    
+    function createBrandProductCard(product, rank) {
+        const card = document.createElement('div');
+        card.className = 'brand-product-card';
+        
+        const hasRating = product.rating && product.rating > 0;
+        const hasDiscount = product.discount && product.discount > 0;
+        
+        card.innerHTML = `
+            <div class="brand-product-image">
+                ${product.image ? `<img src="${product.image}" alt="${escapeHtml(product.product_name)}" loading="lazy">` : ''}
+                <div class="brand-product-rank">#${rank}</div>
+                ${hasRating ? `<div class="brand-product-rating-badge">⭐ ${product.rating.toFixed(1)}</div>` : ''}
+                ${hasDiscount ? `<div class="brand-product-discount">${product.discount}% OFF</div>` : ''}
+            </div>
+            <div class="brand-product-info">
+                <div class="brand-product-brand">${escapeHtml(product.brand || 'Unknown Brand')}</div>
+                <div class="brand-product-name">${escapeHtml(product.product_name || 'Unknown Product')}</div>
+                ${product.category ? `<div class="brand-product-category">${escapeHtml(product.category)}</div>` : ''}
+                <div class="brand-product-price-row">
+                    ${product.price ? `<span class="brand-product-price">₹${product.price.toLocaleString()}</span>` : ''}
+                    ${product.mrp && product.mrp !== product.price ? `<span class="brand-product-mrp">₹${product.mrp.toLocaleString()}</span>` : ''}
+                </div>
+                <div class="brand-product-rating-row">
+                    ${hasRating ? `
+                        <span class="brand-product-rating">⭐ ${product.rating.toFixed(1)}</span>
+                        ${product.rating_count ? `<span class="brand-product-reviews">(${product.rating_count.toLocaleString()} reviews)</span>` : ''}
+                    ` : '<span class="brand-product-reviews">No ratings yet</span>'}
+                </div>
+                <a href="${product.url}" target="_blank" class="brand-product-link">
+                    View on Myntra →
+                </a>
+            </div>
+        `;
+        
+        return card;
+    }
+    
+    // Clear brand search
+    brandClearBtn.addEventListener('click', () => {
+        brandNameInput.value = '';
+        hideBrandError();
+        brandResultsCard.classList.add('hidden');
+        brandResults = [];
+    });
+    
+    // Export brand results to CSV
+    exportBrandCsvBtn.addEventListener('click', () => {
+        if (brandResults.length === 0) return;
+        
+        const rows = [['Rank', 'Product ID', 'Product Name', 'Brand', 'Category', 'Price', 'MRP', 'Discount', 'Rating', 'Rating Count', 'URL']];
+        
+        brandResults.forEach((product, index) => {
+            rows.push([
+                index + 1,
+                product.product_id,
+                product.product_name || '',
+                product.brand || '',
+                product.category || '',
+                product.price || '',
+                product.mrp || '',
+                product.discount ? `${product.discount}%` : '',
+                product.rating ? product.rating.toFixed(1) : '',
+                product.rating_count || '',
+                product.url
+            ]);
+        });
+        
+        const csv = rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `myntra_brand_${brandNameInput.value.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.click();
+        URL.revokeObjectURL(url);
+    });
+    
+    function showBrandError(message) {
+        brandErrorMessage.textContent = message;
+        brandErrorContainer.classList.remove('hidden');
+    }
+    
+    function hideBrandError() {
+        brandErrorContainer.classList.add('hidden');
     }
 });
 </script>
