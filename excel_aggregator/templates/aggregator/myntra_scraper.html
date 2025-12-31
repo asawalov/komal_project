@@ -191,12 +191,12 @@ www.myntra.com/38461908"
             <span id="brand-error-message"></span>
         </div>
         
-        <p class="section-label">Enter a brand name to find their top-rated products on Myntra</p>
+        <p class="section-label">Enter a brand name and optionally a category to find top-rated products on Myntra</p>
         
         <div class="brand-search-form">
             <div class="brand-input-row">
-                <div class="brand-input-group">
-                    <label for="brand-name-input">Brand Name</label>
+                <div class="brand-input-group" style="flex: 2;">
+                    <label for="brand-name-input">Brand Name *</label>
                     <input 
                         type="text" 
                         id="brand-name-input" 
@@ -204,6 +204,17 @@ www.myntra.com/38461908"
                         placeholder="e.g., Nike, Puma, H&M, Levis..."
                     >
                 </div>
+                <div class="brand-input-group" style="flex: 2;">
+                    <label for="category-input">Category <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                    <input 
+                        type="text" 
+                        id="category-input" 
+                        class="brand-input" 
+                        placeholder="e.g., shoes, tshirts, bags, jeans..."
+                    >
+                </div>
+            </div>
+            <div class="brand-input-row" style="margin-top: 1rem;">
                 <div class="brand-input-group">
                     <label for="sort-by-select">Sort By</label>
                     <select id="sort-by-select" class="sort-select">
@@ -236,6 +247,18 @@ www.myntra.com/38461908"
                 <button class="brand-chip" data-brand="Roadster">Roadster</button>
                 <button class="brand-chip" data-brand="Mango">Mango</button>
                 <button class="brand-chip" data-brand="ONLY">ONLY</button>
+            </div>
+            
+            <div class="popular-brands" style="margin-top: 0.75rem;">
+                <span class="popular-label">Popular categories:</span>
+                <button class="category-chip" data-category="shoes">Shoes</button>
+                <button class="category-chip" data-category="tshirts">T-Shirts</button>
+                <button class="category-chip" data-category="shirts">Shirts</button>
+                <button class="category-chip" data-category="jeans">Jeans</button>
+                <button class="category-chip" data-category="dresses">Dresses</button>
+                <button class="category-chip" data-category="jackets">Jackets</button>
+                <button class="category-chip" data-category="bags">Bags</button>
+                <button class="category-chip" data-category="watches">Watches</button>
             </div>
             
             <div class="btn-group" style="margin-top: 1.5rem;">
@@ -416,7 +439,7 @@ www.myntra.com/38461908"
         margin-right: 0.5rem;
     }
     
-    .brand-chip {
+    .brand-chip, .category-chip {
         padding: 0.5rem 1rem;
         background: var(--bg-tertiary);
         border: 1px solid var(--border-color);
@@ -429,6 +452,17 @@ www.myntra.com/38461908"
     
     .brand-chip:hover {
         background: rgba(99, 102, 241, 0.1);
+        border-color: var(--accent-primary);
+        color: var(--accent-primary);
+    }
+    
+    .category-chip {
+        background: rgba(34, 197, 94, 0.05);
+        border-color: rgba(34, 197, 94, 0.2);
+    }
+    
+    .category-chip:hover {
+        background: rgba(34, 197, 94, 0.15);
         border-color: var(--accent-primary);
         color: var(--accent-primary);
     }
@@ -1589,6 +1623,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Brand Search (new functionality)
     // ==========================================
     const brandNameInput = document.getElementById('brand-name-input');
+    const categoryInput = document.getElementById('category-input');
     const sortBySelect = document.getElementById('sort-by-select');
     const numProductsSelect = document.getElementById('num-products-select');
     const brandSearchBtn = document.getElementById('brand-search-btn');
@@ -1602,8 +1637,11 @@ document.addEventListener('DOMContentLoaded', function() {
     const brandProductsGrid = document.getElementById('brand-products-grid');
     const exportBrandCsvBtn = document.getElementById('export-brand-csv-btn');
     const brandChips = document.querySelectorAll('.brand-chip');
+    const categoryChips = document.querySelectorAll('.category-chip');
     
     let brandResults = [];
+    let currentSearchBrand = '';
+    let currentSearchCategory = '';
     
     // Brand chip click
     brandChips.forEach(chip => {
@@ -1613,19 +1651,37 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
     
+    // Category chip click
+    categoryChips.forEach(chip => {
+        chip.addEventListener('click', () => {
+            categoryInput.value = chip.dataset.category;
+            // If brand is already entered, trigger search
+            if (brandNameInput.value.trim()) {
+                searchBrand();
+            }
+        });
+    });
+    
     // Brand search
     brandSearchBtn.addEventListener('click', searchBrand);
     brandNameInput.addEventListener('keypress', (e) => {
         if (e.key === 'Enter') searchBrand();
     });
+    categoryInput.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') searchBrand();
+    });
     
     async function searchBrand() {
         const brandName = brandNameInput.value.trim();
+        const category = categoryInput.value.trim();
         
         if (!brandName) {
             showBrandError('Please enter a brand name');
             return;
         }
+        
+        currentSearchBrand = brandName;
+        currentSearchCategory = category;
         
         hideBrandError();
         brandLoadingCard.classList.remove('hidden');
@@ -1637,6 +1693,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 method: 'POST',
                 body: JSON.stringify({
                     brand: brandName,
+                    category: category,
                     sort_by: sortBySelect.value,
                     num_products: parseInt(numProductsSelect.value)
                 }),
@@ -1650,7 +1707,12 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.success) {
                 brandResults = data.products;
-                brandResultsTitle.textContent = `Top Products from ${escapeHtml(data.brand)}`;
+                // Build title with brand and optional category
+                let titleText = `Top Products from ${escapeHtml(data.brand)}`;
+                if (data.category) {
+                    titleText += ` - ${escapeHtml(data.category)}`;
+                }
+                brandResultsTitle.textContent = titleText;
                 brandResultsCount.textContent = `${data.total_found} products found`;
                 renderBrandResults();
                 brandResultsCard.classList.remove('hidden');
@@ -1725,6 +1787,9 @@ document.addEventListener('DOMContentLoaded', function() {
     // Clear brand search
     brandClearBtn.addEventListener('click', () => {
         brandNameInput.value = '';
+        categoryInput.value = '';
+        currentSearchBrand = '';
+        currentSearchCategory = '';
         hideBrandError();
         brandResultsCard.classList.add('hidden');
         brandResults = [];
@@ -1757,7 +1822,13 @@ document.addEventListener('DOMContentLoaded', function() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = `myntra_brand_${brandNameInput.value.toLowerCase().replace(/\s+/g, '_')}_${new Date().toISOString().slice(0, 10)}.csv`;
+        // Build filename with brand and optional category
+        let filename = `myntra_${currentSearchBrand.toLowerCase().replace(/\s+/g, '_')}`;
+        if (currentSearchCategory) {
+            filename += `_${currentSearchCategory.toLowerCase().replace(/\s+/g, '_')}`;
+        }
+        filename += `_${new Date().toISOString().slice(0, 10)}.csv`;
+        a.download = filename;
         a.click();
         URL.revokeObjectURL(url);
     });

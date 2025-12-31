@@ -1172,9 +1172,9 @@ def scrape_myntra_product(product_id):
             for size_info in sizes_data:
                 if isinstance(size_info, dict):
                     size_label = (
-                        size_info.get("label")
-                        or size_info.get("size")
-                        or size_info.get("name")
+                            size_info.get("label")
+                            or size_info.get("size")
+                            or size_info.get("name")
                         or size_info.get("value")
                         or ""
                     )
@@ -1566,10 +1566,11 @@ def _extract_brand_products(product_list):
 
 @require_http_methods(["POST"])
 def search_myntra_brand(request):
-    """Search Myntra for top-rated products by brand name."""
+    """Search Myntra for top-rated products by brand name and optional category."""
     try:
         data = json.loads(request.body)
         brand_name = data.get("brand", "").strip()
+        category = data.get("category", "").strip()
         sort_by = data.get("sort_by", "rating")  # rating, popularity, price_asc, price_desc
         num_products = min(data.get("num_products", 20), 50)  # Max 50 products
         
@@ -1581,6 +1582,13 @@ def search_myntra_brand(request):
         # Clean brand name for URL (replace spaces with hyphens)
         brand_slug = brand_name.lower().replace(" ", "-").replace("&", "and")
         
+        # If category is provided, append it to the slug (e.g., "nike-shoes", "puma-tshirts")
+        if category:
+            category_slug = category.lower().replace(" ", "-").replace("&", "and")
+            search_slug = f"{brand_slug}-{category_slug}"
+        else:
+            search_slug = brand_slug
+        
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
@@ -1590,7 +1598,7 @@ def search_myntra_brand(request):
         products = []
         
         # Primary method: Scrape the brand page directly (more reliable)
-        brand_url = f"https://www.myntra.com/{brand_slug}"
+        brand_url = f"https://www.myntra.com/{search_slug}"
         response = requests.get(brand_url, headers=headers, timeout=30)
         
         if response.status_code == 200:
@@ -1637,13 +1645,20 @@ def search_myntra_brand(request):
             return JsonResponse({
                 "success": True,
                 "brand": brand_name,
+                "category": category if category else None,
                 "total_found": len(products),
                 "products": products
             })
         
+        # Build error message
+        if category:
+            error_msg = f"No products found for '{brand_name}' in category '{category}'. Please check the brand/category and try again."
+        else:
+            error_msg = f"No products found for brand '{brand_name}'. Please check the brand name and try again."
+        
         return JsonResponse({
             "success": False,
-            "error": f"No products found for brand '{brand_name}'. Please check the brand name and try again."
+            "error": error_msg
         }, status=404)
         
     except requests.Timeout:
