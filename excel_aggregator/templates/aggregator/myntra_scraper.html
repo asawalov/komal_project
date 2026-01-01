@@ -191,7 +191,7 @@ www.myntra.com/38461908"
             <span id="brand-error-message"></span>
         </div>
         
-        <p class="section-label">Enter a brand name and optionally a category to find top-rated products on Myntra</p>
+        <p class="section-label">Enter a brand name and optionally filter by gender and category to find top-rated products on Myntra</p>
         
         <div class="brand-search-form">
             <div class="brand-input-row">
@@ -203,6 +203,17 @@ www.myntra.com/38461908"
                         class="brand-input" 
                         placeholder="e.g., Nike, Puma, H&M, Levis..."
                     >
+                </div>
+                <div class="brand-input-group">
+                    <label for="gender-select">Gender <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
+                    <select id="gender-select" class="sort-select">
+                        <option value="">All</option>
+                        <option value="men">👔 Men</option>
+                        <option value="women">👗 Women</option>
+                        <option value="boys">👦 Boys</option>
+                        <option value="girls">👧 Girls</option>
+                        <option value="kids">🧒 Kids</option>
+                    </select>
                 </div>
                 <div class="brand-input-group" style="flex: 2;">
                     <label for="category-input">Category <span style="color: var(--text-muted); font-weight: normal;">(optional)</span></label>
@@ -1624,6 +1635,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // ==========================================
     const brandNameInput = document.getElementById('brand-name-input');
     const categoryInput = document.getElementById('category-input');
+    const genderSelect = document.getElementById('gender-select');
     const sortBySelect = document.getElementById('sort-by-select');
     const numProductsSelect = document.getElementById('num-products-select');
     const brandSearchBtn = document.getElementById('brand-search-btn');
@@ -1642,6 +1654,7 @@ document.addEventListener('DOMContentLoaded', function() {
     let brandResults = [];
     let currentSearchBrand = '';
     let currentSearchCategory = '';
+    let currentSearchGender = '';
     
     // Brand chip click
     brandChips.forEach(chip => {
@@ -1674,6 +1687,7 @@ document.addEventListener('DOMContentLoaded', function() {
     async function searchBrand() {
         const brandName = brandNameInput.value.trim();
         const category = categoryInput.value.trim();
+        const gender = genderSelect.value;
         
         if (!brandName) {
             showBrandError('Please enter a brand name');
@@ -1682,6 +1696,7 @@ document.addEventListener('DOMContentLoaded', function() {
         
         currentSearchBrand = brandName;
         currentSearchCategory = category;
+        currentSearchGender = gender;
         
         hideBrandError();
         brandLoadingCard.classList.remove('hidden');
@@ -1694,6 +1709,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 body: JSON.stringify({
                     brand: brandName,
                     category: category,
+                    gender: gender,
                     sort_by: sortBySelect.value,
                     num_products: parseInt(numProductsSelect.value)
                 }),
@@ -1707,12 +1723,15 @@ document.addEventListener('DOMContentLoaded', function() {
             
             if (data.success) {
                 brandResults = data.products;
-                // Build title with brand and optional category
-                let titleText = `Top Products from ${escapeHtml(data.brand)}`;
-                if (data.category) {
-                    titleText += ` - ${escapeHtml(data.category)}`;
+                // Build title with brand, gender, and optional category
+                let titleParts = [`Top Products from ${escapeHtml(data.brand)}`];
+                if (data.gender) {
+                    titleParts.push(`for ${escapeHtml(data.gender.charAt(0).toUpperCase() + data.gender.slice(1))}`);
                 }
-                brandResultsTitle.textContent = titleText;
+                if (data.category) {
+                    titleParts.push(`- ${escapeHtml(data.category)}`);
+                }
+                brandResultsTitle.textContent = titleParts.join(' ');
                 brandResultsCount.textContent = `${data.total_found} products found`;
                 renderBrandResults();
                 brandResultsCard.classList.remove('hidden');
@@ -1788,8 +1807,10 @@ document.addEventListener('DOMContentLoaded', function() {
     brandClearBtn.addEventListener('click', () => {
         brandNameInput.value = '';
         categoryInput.value = '';
+        genderSelect.value = '';
         currentSearchBrand = '';
         currentSearchCategory = '';
+        currentSearchGender = '';
         hideBrandError();
         brandResultsCard.classList.add('hidden');
         brandResults = [];
@@ -1822,8 +1843,11 @@ document.addEventListener('DOMContentLoaded', function() {
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        // Build filename with brand and optional category
+        // Build filename with brand, gender, and optional category
         let filename = `myntra_${currentSearchBrand.toLowerCase().replace(/\s+/g, '_')}`;
+        if (currentSearchGender) {
+            filename += `_${currentSearchGender.toLowerCase()}`;
+        }
         if (currentSearchCategory) {
             filename += `_${currentSearchCategory.toLowerCase().replace(/\s+/g, '_')}`;
         }

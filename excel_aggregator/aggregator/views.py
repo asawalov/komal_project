@@ -1566,11 +1566,12 @@ def _extract_brand_products(product_list):
 
 @require_http_methods(["POST"])
 def search_myntra_brand(request):
-    """Search Myntra for top-rated products by brand name and optional category."""
+    """Search Myntra for top-rated products by brand name, optional category and gender."""
     try:
         data = json.loads(request.body)
         brand_name = data.get("brand", "").strip()
         category = data.get("category", "").strip()
+        gender = data.get("gender", "").strip()  # men, women, boys, girls, unisex
         sort_by = data.get("sort_by", "rating")  # rating, popularity, price_asc, price_desc
         num_products = min(data.get("num_products", 20), 50)  # Max 50 products
         
@@ -1582,12 +1583,18 @@ def search_myntra_brand(request):
         # Clean brand name for URL (replace spaces with hyphens)
         brand_slug = brand_name.lower().replace(" ", "-").replace("&", "and")
         
-        # If category is provided, append it to the slug (e.g., "nike-shoes", "puma-tshirts")
+        # Build search slug: gender-brand-category or brand-category or gender-brand or brand
+        # Myntra URL patterns: men-nike-shoes, women-puma-tshirts, nike-shoes, puma
+        search_parts = []
+        if gender:
+            gender_slug = gender.lower().replace(" ", "-")
+            search_parts.append(gender_slug)
+        search_parts.append(brand_slug)
         if category:
             category_slug = category.lower().replace(" ", "-").replace("&", "and")
-            search_slug = f"{brand_slug}-{category_slug}"
-        else:
-            search_slug = brand_slug
+            search_parts.append(category_slug)
+        
+        search_slug = "-".join(search_parts)
         
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -1646,15 +1653,18 @@ def search_myntra_brand(request):
                 "success": True,
                 "brand": brand_name,
                 "category": category if category else None,
+                "gender": gender if gender else None,
                 "total_found": len(products),
                 "products": products
             })
         
         # Build error message
+        filter_parts = [f"brand '{brand_name}'"]
+        if gender:
+            filter_parts.append(f"gender '{gender}'")
         if category:
-            error_msg = f"No products found for '{brand_name}' in category '{category}'. Please check the brand/category and try again."
-        else:
-            error_msg = f"No products found for brand '{brand_name}'. Please check the brand name and try again."
+            filter_parts.append(f"category '{category}'")
+        error_msg = f"No products found for {', '.join(filter_parts)}. Please check your filters and try again."
         
         return JsonResponse({
             "success": False,
