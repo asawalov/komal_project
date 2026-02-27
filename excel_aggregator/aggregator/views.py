@@ -457,7 +457,7 @@ def extract_sizes_from_html(html_content):
                                 sizes.append({
                                     "size": str(label),
                                     "available": bool(available),
-                                    "quantity": qty if qty is not None else ("In Stock" if available else 0),
+                                    "quantity": qty if isinstance(qty, (int, float)) else 0,
                                     "price": None,
                                     "sku_id": str(size_obj.get("skuId")) if size_obj.get("skuId") else None,
                                 })
@@ -507,7 +507,7 @@ def extract_sizes_from_html(html_content):
     # Extract quantity from sizeSellerData if sizes still have no quantity
     # Pattern: "label":"28"...,"sizeSellerData":[{"availableCount":276,...}]
     for size in sizes:
-        if size["quantity"] == "In Stock" or (isinstance(size["quantity"], int) and size["quantity"] == 0 and size["available"]):
+        if not isinstance(size["quantity"], (int, float)) or (size["quantity"] == 0 and size["available"]):
             label = size["size"]
             # Find this size's sizeSellerData in HTML
             # Look for "label":"XX" and then find sizeSellerData within next 3000 chars
@@ -563,9 +563,7 @@ def extract_sizes_from_html(html_content):
     for size in sizes:
         if size["size"] in size_quantities:
             size["quantity"] = size_quantities[size["size"]]
-        elif size["available"]:
-            size["quantity"] = "In Stock"
-        else:
+        elif not isinstance(size["quantity"], (int, float)):
             size["quantity"] = 0
 
     return sizes
@@ -736,6 +734,8 @@ def scrape_myntra_product(product_id):
         "discount": None,
         "rating": None,
         "rating_count": None,
+        "color": None,
+        "fit": None,
         "sizes": [],
         "error": None,
     }
@@ -758,12 +758,13 @@ def scrape_myntra_product(product_id):
     #         "url": original_api_url,
     #     }
 
-    # Rotate user agents to avoid detection
+    # Desktop UAs only — mobile UAs get a stripped React page from Myntra
+    # that lacks pdpData JSON (no color, fit, sizes, articleAttributes).
     user_agents = [
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
-        "Mozilla/5.0 (Linux; Android 14; SM-S918B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.130 Safari/537.36",
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 14_2) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     ]
 
     api_headers = {
@@ -779,22 +780,27 @@ def scrape_myntra_product(product_id):
         "x-requested-with": "browser",
     }
 
-    # Proxy disabled - no proxies configured
-    # proxies = None
-    # if proxy_config["enabled"] and proxy_config["type"] in [
-    #     "custom",
-    #     "rotating",
-    #     "free_proxy",
-    # ]:
-    #     proxies = proxy_config["proxies"]
-
     # Timeout for direct requests (proxy disabled)
     api_timeout = 30
 
+    # Create a shared session and get cookies from homepage first.
+    # The Myntra API requires session cookies to return 200.
+    selected_ua = random.choice(user_agents)
+    session = requests.Session()
     try:
-        # Try API first (direct connection - proxy disabled)
+        session.get(
+            "https://www.myntra.com/",
+            headers={"User-Agent": selected_ua, "Accept": "text/html"},
+            timeout=10,
+        )
+    except Exception:
+        pass
+
+    try:
+        # Try API first (with session cookies)
         methods_tried.append("API")
-        response = requests.get(api_url, headers=api_headers, timeout=api_timeout)
+        api_headers["User-Agent"] = selected_ua
+        response = session.get(api_url, headers=api_headers, timeout=api_timeout)
 
         if response.status_code == 200:
             try:
@@ -811,6 +817,22 @@ def scrape_myntra_product(product_id):
                         if isinstance(style.get("brand"), dict)
                         else style.get("brandName") or (style.get("brand") if isinstance(style.get("brand"), str) else None)
                     )
+
+                    # Get color
+                    result["color"] = (
+                        style.get("baseColour")
+                        or style.get("baseColor")
+                        or style.get("colour")
+                        or style.get("colorName")
+                        or style.get("primaryColour")
+                    )
+
+                    # Get fit from articleAttributes
+                    article_attrs = style.get("articleAttributes", {})
+                    if isinstance(article_attrs, dict):
+                        result["fit"] = article_attrs.get("Fit") or article_attrs.get("fit")
+                    if not result["fit"]:
+                        result["fit"] = style.get("fitType") or style.get("fit")
 
                     price_info = style.get("price", {})
                     if isinstance(price_info, dict):
@@ -849,6 +871,12 @@ def scrape_myntra_product(product_id):
                             if not result["rating_count"]:
                                 result["rating_count"] = reviews.get("count") or reviews.get("totalCount") or reviews.get("totalReviews")
 
+                    # Check global out-of-stock flag
+                    api_global_oos = False
+                    api_flags = style.get("flags", {}) or api_data.get("flags", {})
+                    if isinstance(api_flags, dict):
+                        api_global_oos = bool(api_flags.get("outOfStock", False))
+
                     # Get sizes - check multiple locations and formats
                     sizes_data = []
                     
@@ -873,17 +901,6 @@ def scrape_myntra_product(product_id):
                     # Process sizes
                     for size_info in sizes_data:
                         if isinstance(size_info, dict):
-                            qty = None
-                            
-                            # Try to get quantity from inventory object
-                            inventory = size_info.get("inventory", {})
-                            if isinstance(inventory, dict):
-                                qty = inventory.get("quantity") or inventory.get("availableCount") or inventory.get("stock")
-                            
-                            # Try direct quantity fields
-                            if qty is None:
-                                qty = size_info.get("availableCount") or size_info.get("stock") or size_info.get("quantity") or size_info.get("inStock")
-                            
                             # Get size label - try multiple fields
                             size_label = (
                                 size_info.get("label") 
@@ -893,22 +910,57 @@ def scrape_myntra_product(product_id):
                                 or size_info.get("id")
                                 or ""
                             )
+
+                            if not size_label:
+                                continue
+
+                            # If globally out of stock, override per-size data
+                            if api_global_oos:
+                                result["sizes"].append({
+                                    "size": str(size_label),
+                                    "available": False,
+                                    "quantity": 0,
+                                    "price": result["price"],
+                                })
+                                continue
+
+                            qty = None
+
+                            # Method 1: Check sizeSellerData nested in each size (Myntra's primary structure)
+                            size_seller_data = size_info.get("sizeSellerData", [])
+                            if isinstance(size_seller_data, list) and size_seller_data:
+                                total_qty = 0
+                                for seller in size_seller_data:
+                                    if isinstance(seller, dict):
+                                        seller_qty = seller.get("availableCount") or seller.get("sellableInventoryCount") or 0
+                                        if isinstance(seller_qty, (int, float)):
+                                            total_qty += int(seller_qty)
+                                if total_qty > 0:
+                                    qty = total_qty
+
+                            # Method 2: Try inventory object
+                            if qty is None:
+                                inventory = size_info.get("inventory", {})
+                                if isinstance(inventory, dict):
+                                    qty = inventory.get("quantity") or inventory.get("availableCount") or inventory.get("stock")
+                            
+                            # Method 3: Try direct quantity fields
+                            if qty is None:
+                                qty = size_info.get("availableCount") or size_info.get("stock") or size_info.get("quantity") or size_info.get("inStock")
                             
                             # Get availability
                             available = size_info.get("available", False)
                             if available is None or available == "":
                                 available = qty is not None and qty != 0
                             
-                            # Only add if we have a valid size label
-                            if size_label:
-                                result["sizes"].append(
-                                    {
-                                        "size": str(size_label),
-                                        "available": bool(available),
-                                        "quantity": qty if qty is not None else ("In Stock" if available else 0),
-                                        "price": result["price"],
-                                    }
-                                )
+                            result["sizes"].append(
+                                {
+                                    "size": str(size_label),
+                                    "available": bool(available),
+                                    "quantity": qty if isinstance(qty, (int, float)) else 0,
+                                    "price": result["price"],
+                                }
+                            )
 
                     # Mark as success if we got at least product name or price
                     if result["product_name"] or result["price"] or result["mrp"]:
@@ -920,30 +972,13 @@ def scrape_myntra_product(product_id):
                 # Log error but continue to webpage method
                 pass
 
-        # Method 2: Try webpage with session (direct connection - proxy disabled)
+        # Method 2: Try webpage (reuse session with cookies from homepage)
         methods_tried.append("Webpage")
-        session = requests.Session()
 
-        # First visit homepage to get cookies
-        homepage_headers = {
-            "User-Agent": random.choice(user_agents),
-            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-            "Accept-Language": "en-US,en;q=0.9",
-            "Accept-Encoding": "gzip, deflate, br",
-            "Connection": "keep-alive",
-            "Upgrade-Insecure-Requests": "1",
-        }
-
-        try:
-            session.get("https://www.myntra.com/", headers=homepage_headers, timeout=10)
-        except Exception:
-            pass  # Ignore homepage errors, continue with product page
-
-        # Now try the product page with cookies
         url = f"https://www.myntra.com/{product_id}"
 
         page_headers = {
-            "User-Agent": random.choice(user_agents),
+            "User-Agent": selected_ua,
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
             "Accept-Language": "en-US,en;q=0.9,hi;q=0.8",
             "Accept-Encoding": "gzip, deflate, br",
@@ -1076,6 +1111,42 @@ def scrape_myntra_product(product_id):
                     elif isinstance(style.get("brandName"), str):
                         result["brand"] = style.get("brandName")
 
+            # Get color from pdpData
+            if not result["color"]:
+                result["color"] = (
+                    pdp_data.get("baseColour")
+                    or pdp_data.get("baseColor")
+                    or pdp_data.get("colour")
+                    or pdp_data.get("colorName")
+                    or pdp_data.get("primaryColour")
+                )
+            if not result["color"] and "style" in pdp_data:
+                style = pdp_data.get("style", {})
+                if isinstance(style, dict):
+                    result["color"] = (
+                        style.get("baseColour")
+                        or style.get("baseColor")
+                        or style.get("colour")
+                        or style.get("colorName")
+                        or style.get("primaryColour")
+                    )
+
+            # Get fit from articleAttributes in pdpData
+            if not result["fit"]:
+                article_attrs = pdp_data.get("articleAttributes", {})
+                if isinstance(article_attrs, dict):
+                    result["fit"] = article_attrs.get("Fit") or article_attrs.get("fit")
+                if not result["fit"]:
+                    result["fit"] = pdp_data.get("fitType") or pdp_data.get("fit")
+            if not result["fit"] and "style" in pdp_data:
+                style = pdp_data.get("style", {})
+                if isinstance(style, dict):
+                    style_attrs = style.get("articleAttributes", {})
+                    if isinstance(style_attrs, dict):
+                        result["fit"] = style_attrs.get("Fit") or style_attrs.get("fit")
+                    if not result["fit"]:
+                        result["fit"] = style.get("fitType") or style.get("fit")
+
             # Get price info - try multiple locations
             price_info = pdp_data.get("price", {})
             if isinstance(price_info, dict):
@@ -1156,8 +1227,21 @@ def scrape_myntra_product(product_id):
                             if not result["rating_count"]:
                                 result["rating_count"] = style.get("ratingCount") or style.get("reviewCount") or style.get("totalRatings") or style.get("totalCount")
 
-            # Get sizes from pdpData - try multiple locations
-            sizes_data = pdp_data.get("sizes", [])
+            # Check global out-of-stock flag from flags object
+            global_out_of_stock = False
+            flags = pdp_data.get("flags", {})
+            if isinstance(flags, dict):
+                global_out_of_stock = bool(flags.get("outOfStock", False))
+
+            # Skip size extraction if API already provided sizes
+            if result["sizes"]:
+                if global_out_of_stock:
+                    for size in result["sizes"]:
+                        size["available"] = False
+                        size["quantity"] = 0
+                sizes_data = []
+            else:
+                sizes_data = pdp_data.get("sizes", [])
             
             # Try alternative size locations
             if not sizes_data:
@@ -1181,6 +1265,16 @@ def scrape_myntra_product(product_id):
                     
                     # Only process if we have a valid size label
                     if not size_label:
+                        continue
+
+                    # If the product is globally out of stock, override per-size data
+                    if global_out_of_stock:
+                        result["sizes"].append({
+                            "size": size_label,
+                            "available": False,
+                            "quantity": 0,
+                            "price": result["price"],
+                        })
                         continue
                     
                     size_entry = {
@@ -1221,9 +1315,7 @@ def scrape_myntra_product(product_id):
                             or size_info.get("inStock")
                         )
 
-                    if size_entry["quantity"] is None and size_entry["available"]:
-                        size_entry["quantity"] = "In Stock"
-                    elif size_entry["quantity"] is None:
+                    if size_entry["quantity"] is None or not isinstance(size_entry["quantity"], (int, float)):
                         size_entry["quantity"] = 0
 
                     result["sizes"].append(size_entry)
@@ -1254,6 +1346,25 @@ def scrape_myntra_product(product_id):
                 if match:
                     result["brand"] = match.group(1).strip()
                     break
+
+        if not result["color"]:
+            color_patterns = [
+                r'"baseColour"\s*:\s*"([^"]+)"',
+                r'"baseColor"\s*:\s*"([^"]+)"',
+                r'"colour"\s*:\s*"([^"]+)"',
+                r'"colorName"\s*:\s*"([^"]+)"',
+                r'"primaryColour"\s*:\s*"([^"]+)"',
+            ]
+            for pattern in color_patterns:
+                match = re.search(pattern, html_content)
+                if match:
+                    result["color"] = match.group(1).strip()
+                    break
+
+        if not result["fit"]:
+            fit_match = re.search(r'"Fit"\s*:\s*"([^"]+)"', html_content)
+            if fit_match:
+                result["fit"] = fit_match.group(1).strip()
 
         if not result["mrp"]:
             mrp_match = re.search(r'"mrp"\s*:\s*(\d+)', html_content)
@@ -1309,6 +1420,11 @@ def scrape_myntra_product(product_id):
                     except ValueError:
                         continue
 
+        # Only keep rating if product has reviews (rating_count > 0).
+        # Products with no reviews can have stray "rating" values from other JSON on the page.
+        if result.get("rating_count") is None or result.get("rating_count") == 0:
+            result["rating"] = None
+
         # Calculate discount if not found
         if (
             not result["discount"]
@@ -1325,6 +1441,25 @@ def scrape_myntra_product(product_id):
             result["sizes"] = extract_sizes_from_html(html_content)
             for size in result["sizes"]:
                 size["price"] = result["price"]
+
+        # Final safety net: check for global out-of-stock via regex in HTML.
+        # Myntra's flags.outOfStock is authoritative — per-size data can be stale.
+        if result["sizes"]:
+            oos_match = re.search(r'"outOfStock"\s*:\s*true', html_content)
+            if oos_match:
+                for size in result["sizes"]:
+                    size["available"] = False
+                    size["quantity"] = 0
+
+        # Fallback: extract fit from product name if not found in articleAttributes
+        if not result["fit"] and result.get("product_name"):
+            fit_pattern = re.search(
+                r'\b(Slim|Regular|Relaxed|Loose|Skinny|Tailored|Oversized|Straight|Comfort|Athletic)\s+Fit\b',
+                result["product_name"],
+                re.IGNORECASE,
+            )
+            if fit_pattern:
+                result["fit"] = fit_pattern.group(0).title()
 
         # Clean up product_name (strip whitespace, handle None)
         if result["product_name"]:
@@ -1678,6 +1813,321 @@ def search_myntra_brand(request):
         }, status=408)
     except Exception as e:
         import traceback
+        traceback.print_exc()
+        return JsonResponse({"success": False, "error": str(e)}, status=400)
+
+
+# ============================================
+# Ajio Scraper Functionality
+# ============================================
+
+
+def ajio_scraper(request):
+    """Render the Ajio scraper page."""
+    return render(request, "aggregator/ajio_scraper.html")
+
+
+def scrape_ajio_product(product_id):
+    """Scrape a single Ajio product using curl + __PRELOADED_STATE__."""
+    import subprocess
+    import random
+
+    result = {
+        "product_id": product_id,
+        "url": f"https://www.ajio.com/p/{product_id}",
+        "success": False,
+        "product_name": None,
+        "brand": None,
+        "price": None,
+        "mrp": None,
+        "discount": None,
+        "rating": None,
+        "rating_count": None,
+        "color": None,
+        "fit": None,
+        "sizes": [],
+        "error": None,
+    }
+
+    user_agents = [
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.6099.130 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    ]
+
+    selected_ua = random.choice(user_agents)
+    url = f"https://www.ajio.com/p/{product_id}"
+
+    curl_cmd = [
+        "curl", "-sS", "--compressed", "--max-time", "60",
+        "-H", f"User-Agent: {selected_ua}",
+        "-H", "Accept: text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+        "-H", "Accept-Language: en-US,en;q=0.9",
+        "-H", "Accept-Encoding: gzip, deflate, br",
+        "-H", 'Sec-Ch-Ua: "Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+        "-H", "Sec-Ch-Ua-Mobile: ?0",
+        "-H", 'Sec-Ch-Ua-Platform: "macOS"',
+        "-H", "Sec-Fetch-Dest: document",
+        "-H", "Sec-Fetch-Mode: navigate",
+        "-H", "Sec-Fetch-Site: none",
+        "-H", "Sec-Fetch-User: ?1",
+        "-H", "Upgrade-Insecure-Requests: 1",
+        url,
+    ]
+
+    try:
+        proc = subprocess.run(curl_cmd, capture_output=True, text=True, timeout=90)
+
+        if proc.returncode != 0:
+            result["error"] = f"curl failed (exit {proc.returncode}): {proc.stderr[:200]}"
+            return result
+
+        html_content = proc.stdout
+        if not html_content or len(html_content) < 1000:
+            result["error"] = "Empty or very short response from Ajio"
+            return result
+
+        # Extract __PRELOADED_STATE__ JSON
+        preloaded_match = re.search(
+            r"window\.__PRELOADED_STATE__\s*=\s*(\{.*?\});?\s*</script>",
+            html_content,
+            re.DOTALL,
+        )
+
+        if not preloaded_match:
+            result["error"] = "Could not find product data in page (no __PRELOADED_STATE__)"
+            return result
+
+        try:
+            state_data = json.loads(preloaded_match.group(1))
+        except json.JSONDecodeError as e:
+            result["error"] = f"Failed to parse product data JSON: {e}"
+            return result
+
+        product_data = state_data.get("product", {})
+        pd_details = product_data.get("productDetails", {})
+
+        if not pd_details or not pd_details.get("name"):
+            svc_errors = pd_details.get("serviceErrors", []) if pd_details else []
+            fatal = [e for e in svc_errors if e.get("severity") == "FATAL"]
+            err_msg = fatal[0].get("message") if fatal else "No product details found"
+            result["error"] = f"Product not found: {err_msg}"
+            return result
+
+        # Product name
+        result["product_name"] = pd_details.get("name")
+
+        # Brand
+        result["brand"] = pd_details.get("brandName")
+
+        # Price (selling price)
+        price_info = pd_details.get("price", {})
+        if isinstance(price_info, dict):
+            result["price"] = price_info.get("value")
+            result["discount"] = price_info.get("discountValue", 0)
+
+        # MRP (original price)
+        was_price = pd_details.get("wasPriceData", {})
+        if isinstance(was_price, dict):
+            result["mrp"] = was_price.get("value")
+
+        # If discount not from price, calculate it
+        if not result["discount"] and result["mrp"] and result["price"]:
+            if result["mrp"] > result["price"]:
+                result["discount"] = round(
+                    ((result["mrp"] - result["price"]) / result["mrp"]) * 100
+                )
+
+        # Rating from ratingsResponse
+        ratings_resp = pd_details.get("ratingsResponse", {})
+        if isinstance(ratings_resp, dict):
+            result["rating"] = ratings_resp.get("averageRating") or ratings_resp.get("rating")
+            result["rating_count"] = (
+                ratings_resp.get("totalCount")
+                or ratings_resp.get("totalRatings")
+                or ratings_resp.get("reviewCount")
+            )
+
+        result["rating_count"] = result["rating_count"] or pd_details.get("numberOfReviews") or 0
+
+        # Color and Fit from featureData
+        for feature in pd_details.get("featureData", []):
+            feature_name = (feature.get("name") or "").lower()
+            feature_vals = [fv.get("value") for fv in feature.get("featureValues", []) if fv.get("value")]
+
+            if not feature_vals:
+                continue
+
+            if "color" in feature_name or "colour" in feature_name:
+                if not result["color"]:
+                    result["color"] = feature_vals[0]
+            elif "fit" in feature_name and "benefit" not in feature_name:
+                if not result["fit"]:
+                    result["fit"] = feature_vals[0]
+
+        # Fallback color from variantOptionQualifiers
+        if not result["color"]:
+            for vo in pd_details.get("variantOptions", [])[:1]:
+                for q in vo.get("variantOptionQualifiers", []):
+                    if q.get("qualifier") == "color" and q.get("value"):
+                        result["color"] = q["value"].title()
+                        break
+
+        # Sizes from variantOptions
+        for vo in pd_details.get("variantOptions", []):
+            size_label = None
+            for q in vo.get("variantOptionQualifiers", []):
+                if q.get("qualifier") == "size" and q.get("value"):
+                    size_label = q["value"]
+                    break
+
+            if not size_label:
+                continue
+
+            stock_info = vo.get("stock", {})
+            stock_level = stock_info.get("stockLevel", 0)
+            stock_status = stock_info.get("stockLevelStatus", "outOfStock")
+
+            size_price = vo.get("priceData", {}).get("value") or result["price"]
+
+            available = stock_status not in ("outOfStock",) and stock_level > 0
+
+            result["sizes"].append({
+                "size": str(size_label),
+                "available": available,
+                "quantity": stock_level if isinstance(stock_level, (int, float)) else 0,
+                "price": size_price,
+            })
+
+        # Also try JSON-LD as fallback for missing data
+        if not result["product_name"] or not result["brand"]:
+            jsonld_matches = re.findall(
+                r'<script[^>]*type="application/ld\+json"[^>]*>(.*?)</script>',
+                html_content,
+                re.DOTALL,
+            )
+            for jl in jsonld_matches:
+                try:
+                    jdata = json.loads(jl)
+                    if jdata.get("@type") == "ProductGroup":
+                        if not result["product_name"]:
+                            result["product_name"] = jdata.get("name")
+                        if not result["brand"]:
+                            brand_obj = jdata.get("brand", {})
+                            result["brand"] = brand_obj.get("name") if isinstance(brand_obj, dict) else brand_obj
+                        break
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+
+        # Update URL to the actual product page URL if available
+        product_url = pd_details.get("url")
+        if product_url:
+            result["url"] = f"https://www.ajio.com{product_url}"
+
+        if result["product_name"] or result["price"] or result["mrp"]:
+            result["success"] = True
+
+        return result
+
+    except subprocess.TimeoutExpired:
+        result["error"] = "Request timeout (90s) - Ajio may be slow or blocking"
+        return result
+    except Exception as e:
+        result["error"] = f"Error: {str(e)}"
+        return result
+
+
+@require_http_methods(["POST"])
+def fetch_ajio_products(request):
+    """Fetch product details for multiple Ajio product IDs with rate limiting."""
+    try:
+        data = json.loads(request.body)
+        product_ids = data.get("product_ids", [])
+
+        if not product_ids:
+            return JsonResponse(
+                {"success": False, "error": "No product IDs provided"}, status=400
+            )
+
+        cleaned_ids = []
+        for pid in product_ids:
+            pid_str = str(pid).strip()
+            match = re.search(r"(\d{6,})", pid_str)
+            if match:
+                cleaned_ids.append(match.group(1))
+            elif pid_str.isdigit():
+                cleaned_ids.append(pid_str)
+
+        if not cleaned_ids:
+            return JsonResponse(
+                {"success": False, "error": "No valid product IDs found"}, status=400
+            )
+
+        cleaned_ids = list(dict.fromkeys(cleaned_ids))
+
+        results = []
+        errors = []
+
+        BATCH_SIZE = 20
+        DELAY_BETWEEN_BATCHES = 3
+        MAX_WORKERS = 5
+
+        batches = [
+            cleaned_ids[i : i + BATCH_SIZE]
+            for i in range(0, len(cleaned_ids), BATCH_SIZE)
+        ]
+        total_batches = len(batches)
+
+        for batch_index, batch in enumerate(batches):
+            max_workers = min(MAX_WORKERS, len(batch))
+
+            with concurrent.futures.ThreadPoolExecutor(
+                max_workers=max_workers
+            ) as executor:
+                future_to_id = {
+                    executor.submit(scrape_ajio_product, pid): pid for pid in batch
+                }
+
+                for future in concurrent.futures.as_completed(future_to_id):
+                    pid = future_to_id[future]
+                    try:
+                        result = future.result()
+                        results.append(result)
+                        if not result["success"]:
+                            errors.append(
+                                {
+                                    "product_id": pid,
+                                    "error": result.get("error", "Unknown error"),
+                                }
+                            )
+                    except Exception as e:
+                        errors.append({"product_id": pid, "error": str(e)})
+                        results.append(
+                            {"product_id": pid, "success": False, "error": str(e)}
+                        )
+
+            if batch_index < total_batches - 1:
+                print(
+                    f"Ajio: Completed batch {batch_index + 1}/{total_batches}. Waiting {DELAY_BETWEEN_BATCHES}s..."
+                )
+                time.sleep(DELAY_BETWEEN_BATCHES)
+
+        results.sort(key=lambda x: cleaned_ids.index(x["product_id"]))
+
+        return JsonResponse(
+            {
+                "success": True,
+                "total_requested": len(cleaned_ids),
+                "total_success": sum(1 for r in results if r["success"]),
+                "total_failed": sum(1 for r in results if not r["success"]),
+                "products": results,
+                "errors": errors,
+            }
+        )
+
+    except Exception as e:
+        import traceback
+
         traceback.print_exc()
         return JsonResponse({"success": False, "error": str(e)}, status=400)
 

@@ -14,6 +14,9 @@ urlpatterns = [
     path("myntra/", views.myntra_scraper, name="myntra_scraper"),
     path("myntra/fetch/", views.fetch_myntra_products, name="fetch_myntra"),
     path("myntra/brand-search/", views.search_myntra_brand, name="brand_search"),
+    # Ajio Scraper
+    path("ajio/", views.ajio_scraper, name="ajio_scraper"),
+    path("ajio/fetch/", views.fetch_ajio_products, name="fetch_ajio"),
     # Excel Merge
     path("merge/", views.excel_merge, name="excel_merge"),
     path("merge/upload/", views.upload_merge_excel, name="upload_merge"),
