@@ -11,6 +11,7 @@
 <!-- Navigation -->
 <div style="margin-bottom: 2rem;">
     <a href="/" class="btn btn-secondary">← Back to Excel Aggregator</a>
+    <a href="/ajio/" class="btn btn-secondary" style="margin-left: 0.5rem;">🛒 Ajio Scraper</a>
     <a href="/merge/" class="btn btn-secondary" style="margin-left: 0.5rem;">🔗 Excel Merge Tool</a>
     <a href="/formula/" class="btn btn-secondary" style="margin-left: 0.5rem;">🧮 Formula Columns</a>
 </div>
@@ -960,6 +961,12 @@ www.myntra.com/38461908"
         margin-top: 0.25rem;
     }
     
+    .product-color {
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        margin-top: 0.25rem;
+    }
+    
     .product-rating {
         font-size: 0.85rem;
         color: var(--accent-secondary);
@@ -1486,6 +1493,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         <div class="product-id">${productIdHtml}</div>
                         <div class="product-name">${escapeHtml(product.product_name && product.product_name.trim() ? product.product_name : 'Unknown Product')}</div>
                         ${product.brand && product.brand.trim() ? `<div class="product-brand">${escapeHtml(product.brand)}</div>` : ''}
+                        ${product.color || product.fit ? `<div class="product-color">${product.color ? '🎨 ' + escapeHtml(product.color) : ''}${product.color && product.fit ? ' · ' : ''}${product.fit ? '👕 ' + escapeHtml(product.fit) : ''}</div>` : ''}
                         ${product.rating ? `<div class="product-rating">⭐ ${product.rating.toFixed(1)}${product.rating_count ? ` (${product.rating_count.toLocaleString()} reviews)` : ''}</div>` : ''}
                     </div>
                     <div class="product-price-info">
@@ -1511,8 +1519,7 @@ document.addEventListener('DOMContentLoaded', function() {
                                 <div class="size-label">${escapeHtml(size.size || 'N/A')}</div>
                                 <div class="size-quantity ${size.available ? 'in-stock' : 'out-of-stock'}">
                                     ${size.available ? 
-                                        (typeof size.quantity === 'number' ? `${size.quantity} unit${size.quantity !== 1 ? 's' : ''} left` : 
-                                        (size.quantity || 'In Stock')) : 
+                                        `${size.quantity} unit${size.quantity !== 1 ? 's' : ''} left` : 
                                         'Out of Stock'}
                                 </div>
                                 ${size.price ? `<div class="size-price">₹${size.price.toLocaleString()}</div>` : ''}
@@ -1565,7 +1572,7 @@ document.addEventListener('DOMContentLoaded', function() {
         const dataToExport = filteredResults.length > 0 ? filteredResults : allResults;
         if (dataToExport.length === 0) return;
         
-        const rows = [['Product ID', 'Product Name', 'Brand', 'Price', 'MRP', 'Discount', 'Rating', 'Rating Count', 'Size', 'Available', 'Stock Quantity', 'URL', 'Error']];
+        const rows = [['Product ID', 'Product Name', 'Brand', 'Color', 'Fit', 'Price', 'MRP', 'Discount', 'Rating', 'Rating Count', 'Size', 'Available', 'Stock Quantity', 'URL', 'Error']];
         
         for (const product of dataToExport) {
             if (product.success && product.sizes.length > 0) {
@@ -1574,6 +1581,8 @@ document.addEventListener('DOMContentLoaded', function() {
                         product.product_id,
                         product.product_name || '',
                         product.brand || '',
+                        product.color || '',
+                        product.fit || '',
                         product.price || '',
                         product.mrp || '',
                         product.discount ? `${product.discount}%` : '',
@@ -1581,7 +1590,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         product.rating_count || '',
                         size.size,
                         size.available ? 'Yes' : 'No',
-                        typeof size.quantity === 'number' ? size.quantity : (size.available ? 'Available' : 'Out of Stock'),
+                        size.quantity || 0,
                         product.url,
                         ''
                     ]);
@@ -1591,6 +1600,8 @@ document.addEventListener('DOMContentLoaded', function() {
                     product.product_id,
                     product.product_name || '',
                     product.brand || '',
+                    product.color || '',
+                    product.fit || '',
                     product.price || '',
                     product.mrp || '',
                     product.discount ? `${product.discount}%` : '',
